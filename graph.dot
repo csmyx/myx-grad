@@ -1,6 +1,5 @@
-
 digraph ComputeGraph {
-    rankdir=LR;
+rankdir=LR;
 
 node_2 [label="node_2 | scalar[6.000000] | +", shape=box]
 node_1 [label="node_1 | scalar[3.500000] | <nop>", shape=box]

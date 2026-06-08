@@ -2,7 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
+#include <fmt/format.h>
 #include <string>
 #include <vector>
 
@@ -64,10 +64,10 @@ template <typename T> inline auto to_string(node<T> node) -> std::string {
 }
 
 template <typename T> struct graph {
-  explicit graph(node<T> *root) : root(root) {}
+  explicit graph(node<T> *root) : m_root(root) {}
 
-  static auto display(graph g) -> std::string {
-    const auto *cur = g.root;
+  auto display() -> std::string {
+    const auto *cur = m_root;
     std::string node_str;
     std::string edge_str;
     std::vector<const node<T> *> stk;
@@ -83,7 +83,7 @@ template <typename T> struct graph {
     }
     return node_str + edge_str;
   }
-  node<T> *root;
+  node<T> *m_root;
 };
 
 template <typename T> class scalar : public node<T> {

@@ -1,0 +1,50 @@
+BasedOnStyle: Google
+Language: Cpp
+
+# 缩进与 Tab
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# 访问修饰符对齐
+AccessModifierOffset: -4
+
+# 行宽
+ColumnLimit: 120
+MaxEmptyLinesToKeep: 2
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# 大括号风格（Allman，单独起行，阅读更清晰）
+BreakBeforeBraces: Allman
+
+# 命名空间不缩进
+NamespaceIndentation: None
+
+# 禁止短语句单行（强制换行，风格统一）
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: Never
+
+# 指针/引用紧贴类型（现代 C++ 主流写法）
+PointerAlignment: Right
+
+# 空格规则
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpacesInAngles: false
+SpaceAfterComma: true
+
+# 注释
+AlignTrailingComments: true
+ReflowComments: true
+CommentPragmas: '^ IWYU pragma:'
+
+# 对齐规则
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+
+# 构造函数初始化列表
+BreakConstructorInitializers: BeforeComma

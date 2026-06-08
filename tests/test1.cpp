@@ -1,8 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
+#include <fmt/core.h>
+#include <fstream>
 #include <myx_grad/engine.h>
 
 TEST_CASE("test value", "[engine]") {
-  using namespace engine;
   {
 
     auto const val = engine::scalar<int>(5);
@@ -19,20 +20,19 @@ TEST_CASE("test value", "[engine]") {
     auto val2 = engine::scalar<float>(3.5f);
     auto val3 = val1 + val2;
 
-    graph<float> g(&val3);
-    auto graph_str = graph<float>::display(g);
-
-    const std::string prefix_str = R"(
-digraph ComputeGraph {
-    rankdir=LR;
+    const std::string prefix_str = R"(digraph ComputeGraph {
+rankdir=LR;
 )";
     const std::string suffix_str = "}\n";
-    auto dot_str = fmt::format("{}\n{}\n{}", prefix_str, graph_str, suffix_str);
+    engine::graph<float> g(&val3);
+    auto dot_str =
+        fmt::format("{}\n{}\n{}", prefix_str, g.display(), suffix_str);
 
     {
       std::ofstream dot_file("graph.dot");
       REQUIRE(dot_file.is_open());
       dot_file << dot_str;
+      dot_file.close();
       fmt::println("Graph written to graph.dot");
     }
   }
