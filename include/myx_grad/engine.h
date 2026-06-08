@@ -1,12 +1,16 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <fmt/format.h>
 #include <string>
 #include <vector>
 
 namespace engine {
+
+using float_t = double;
 
 template <typename T> class scalar;
 
@@ -42,79 +46,128 @@ inline auto to_string(op_t o) -> std::string {
 
 template <typename T> struct node {
   static inline int count = 0;
-  explicit node(std::string label, std::vector<const node<T> *> prev,
-                op_t op = op_t::nop, std::string shape = "box")
-      : label(std::move(label)), id("node_" + std::to_string(count)),
-        shape(std::move(shape)), prev(std::move(prev)), m_op(op) {
+  explicit node(std::string label, std::string shape = "box")
+      : m_label(std::move(label)), m_id("node_" + std::to_string(count)),
+        m_shape(std::move(shape)) {
     ++count;
   }
-
-  void add_prev(const node<T> &prev_node) { prev.push_back(&prev_node); }
-
-  std::string label;
-  std::string id;
-  std::string shape;
-  std::vector<const node<T> *> prev;
-  op_t m_op;
+  std::string m_label;
+  std::string m_id;
+  std::string m_shape;
 };
 
-template <typename T> inline auto to_string(node<T> node) -> std::string {
-  return fmt::format("{} [label=\"{} | {} | {}\", shape={}]", node.id, node.id,
-                     node.label, to_string(node.m_op), node.shape);
+template <typename T>
+inline auto to_string(engine::scalar<T> node) -> std::string {
+  return fmt::format("{} [label=\"{} | {} | {}\", shape={}]", node.m_id,
+                     node.m_id, node.m_label, to_string(node.m_op),
+                     node.m_shape);
 }
 
 template <typename T> struct graph {
-  explicit graph(node<T> *root) : m_root(root) {}
+  explicit graph(scalar<T> *root) : m_root(root) {}
 
   auto display() -> std::string {
-    const auto *cur = m_root;
+    scalar<T> *cur = m_root;
     std::string node_str;
     std::string edge_str;
-    std::vector<const node<T> *> stk;
+    std::vector<scalar<T> *> stk;
     stk.push_back(cur);
     while (!stk.empty()) {
       cur = stk.back();
       stk.pop_back();
       node_str += to_string(*cur) + "\n";
-      for (const node<T> *prev_node : cur->prev) {
-        stk.push_back(prev_node);
-        edge_str += prev_node->id + " -> " + cur->id + ";\n";
+      if (cur->m_left) {
+        stk.push_back(cur->m_left);
+        edge_str += cur->m_left->m_id + " -> " + cur->m_id + ";\n";
+      }
+      if (cur->m_right) {
+        stk.push_back(cur->m_right);
+        edge_str += cur->m_right->m_id + " -> " + cur->m_id + ";\n";
       }
     }
     return node_str + edge_str;
   }
-  node<T> *m_root;
+  engine::scalar<T> *m_root;
 };
 
 template <typename T> class scalar : public node<T> {
 public:
-  explicit scalar(T val)
-      : node<T>("scalar[" + std::to_string(val) + "]", {}), m_value(val) {}
-  scalar(T val, std::vector<const node<T> *> prev, op_t op)
-      : node<T>("scalar[" + std::to_string(val) + "]", prev, op), m_value(val) {
+  static auto label(T val) -> std::string {
+    return "scalar[" + std::to_string(val) + "]";
   }
+  scalar(T val, float_t grad, op_t op, scalar<T> *left, scalar<T> *right)
+      : node<T>(label(val)), m_value(val), m_op(op), m_grad(grad), m_left(left),
+        m_right(right) {}
+  explicit scalar(T val) : scalar(val, 0.0, op_t::nop, nullptr, nullptr) {}
 
   auto value() const -> T { return m_value; }
 
-  auto operator+(const scalar &other) const -> scalar {
-    return scalar(m_value + other.m_value, {this, &other}, op_t::add);
+  auto operator+(this scalar &self, scalar &other) -> scalar {
+    auto res =
+        scalar(self.m_value + other.m_value, 0.0, op_t::add, &self, &other);
+    return res;
   }
-  auto operator-(const scalar &other) const -> scalar {
-    return scalar(m_value - other.m_value, {this, &other}, op_t::sub);
+  auto operator-(this scalar &self, scalar &other) -> scalar {
+    auto res =
+        scalar(self.m_value - other.m_value, 0.0, op_t::sub, &self, &other);
+    return res;
   }
-  auto operator*(const scalar &other) const -> scalar {
-    return scalar(m_value * other.m_value, {this, &other}, op_t::mul);
+  auto operator*(this scalar &self, scalar &other) -> scalar {
+    auto res =
+        scalar(self.m_value * other.m_value, 0.0, op_t::mul, &self, &other);
+    return res;
   }
-  auto operator/(const scalar &other) const -> scalar {
-    return scalar(m_value / other.m_value, {this, &other}, op_t::div);
+  auto operator/(this scalar &self, scalar &other) -> scalar {
+    std::abort();
+    auto res =
+        scalar(self.m_value / other.m_value, 0.0, op_t::div, &self, &other);
+    return res;
   }
 
-  auto operator==(const scalar &other) const -> bool {
-    return this->id == other.id;
+  auto operator==(scalar &other) const -> bool {
+    return this->m_id == other.m_id;
   }
 
-private:
+  auto backpropagation() {
+    switch (m_op) {
+    case op_t::add:
+      if (m_left) {
+        m_left->m_grad += 1.0 * m_grad;
+      }
+      if (m_right) {
+        m_right->m_grad += 1.0 * m_grad;
+      }
+      return;
+    case op_t::sub:
+      if (m_left) {
+        m_left->m_grad += -1.0 * m_grad;
+      }
+      if (m_right) {
+        m_right->m_grad += -1.0 * m_grad;
+      }
+      return;
+    case op_t::mul:
+      if (m_left) {
+        m_left->m_grad += m_right->m_value * m_grad;
+      }
+      if (m_right) {
+        m_right->m_grad += m_left->m_value * m_grad;
+      }
+      return;
+    case op_t::div:
+      std::abort();
+      return;
+    default:
+      std::abort();
+      return;
+    }
+  }
+
   T m_value;
+  float_t m_grad; // gradient
+  op_t m_op;
+  scalar<T> *m_left;
+  scalar<T> *m_right;
 };
 
 } // namespace engine
