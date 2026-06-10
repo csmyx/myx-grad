@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fmt/format.h>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -58,9 +59,10 @@ template <typename T> struct node {
 
 template <typename T>
 inline auto to_string(engine::scalar<T> node) -> std::string {
-  return fmt::format("{} [label=\"{} | {} | {}\", shape={}]", node.m_id,
-                     node.m_id, node.m_label, to_string(node.m_op),
-                     node.m_shape);
+  return fmt::format(
+      "{} [label=\"id: {} | value: {} | grad: {} | op: {} \", shape={}]",
+      node.m_id, node.m_id, node.m_label, node.m_grad, to_string(node.m_op),
+      node.m_shape);
 }
 
 template <typename T> struct graph {
@@ -87,6 +89,25 @@ template <typename T> struct graph {
     }
     return node_str + edge_str;
   }
+
+  auto back_propagate() {
+    std::vector<engine::scalar<T> *> v;
+    std::function<void(engine::scalar<T> *)> build_tokological;
+    build_tokological = [&](engine::scalar<T> *s) -> void {
+      if (!s) {
+        return;
+      }
+      build_tokological(s->m_left);
+      build_tokological(s->m_right);
+      v.push_back(s);
+    };
+    m_root->m_grad = 1.0;
+    build_tokological(m_root);
+    for (auto it = v.rbegin(); it != v.rend(); ++it) {
+      (*it)->back_propagate();
+    }
+  }
+
   engine::scalar<T> *m_root;
 };
 
@@ -128,7 +149,7 @@ public:
     return this->m_id == other.m_id;
   }
 
-  auto backpropagation() {
+  auto back_propagate() {
     switch (m_op) {
     case op_t::add:
       if (m_left) {
