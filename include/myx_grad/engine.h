@@ -26,7 +26,7 @@ template <typename T> struct hash<engine::Value<T>> {
 
 namespace engine {
 
-enum class op_t : std::uint8_t { nop, add, sub, mul, div, tanh };
+enum class op_t : std::uint8_t { nop, add, sub, mul, div, exp, tanh, pow };
 
 inline auto to_string(op_t o) -> std::string {
   switch (o) {
@@ -38,10 +38,14 @@ inline auto to_string(op_t o) -> std::string {
     return "*";
   case op_t::div:
     return "/";
+  case op_t::exp:
+    return "exp";
   case op_t::tanh:
     return "tanh";
   case op_t::nop:
     return "nop";
+  case op_t::pow:
+    return "pow";
   default:
     return "UNKNOWN";
   }
@@ -69,10 +73,15 @@ template <typename T> struct Node {
 
 template <typename T>
 inline auto to_string(engine::Value<T> node) -> std::string {
-  return fmt::format(
-      "{} [label=\"{{id: {} | value: {} | grad: {} | op: {}}}\", shape={}]",
-      node.m_id, node.m_id, format_v(node.m_value), format_v(node.m_grad),
-      to_string(node.m_op), node.m_shape);
+  std::string label = fmt::format("{{id: {} | value: {} | grad: {} | op: {}",
+                                  node.m_id, format_v(node.m_value),
+                                  format_v(node.m_grad), to_string(node.m_op));
+  if (node.m_op == op_t::pow) {
+    label += fmt::format(" | exp: {}", format_v(node.m_op_params[0]));
+  }
+  label += "}";
+  return fmt::format("{} [label=\"{}\", shape={}]", node.m_id, label,
+                     node.m_shape);
 }
 
 template <typename T> struct graph {
@@ -124,6 +133,8 @@ template <typename T> struct graph {
 
 template <typename T> class Value : public Node<T> {
 public:
+  static constexpr std::size_t k_max_op_params = 4;
+
   Value(std::string id, T val, float_t grad, op_t op, Value<T> *left,
         Value<T> *right)
       : Node<T>(val, id), m_value(val), m_op(op), m_grad(grad), m_left(left),
@@ -138,6 +149,12 @@ public:
   auto with_id(std::string id) -> Value & {
     this->m_id = id;
     return *this;
+  }
+
+  auto exp() -> Value {
+    auto value = std::exp(m_value);
+    auto res = Value("", value, 0.0, op_t::exp, this, nullptr);
+    return res;
   }
 
   auto tanh() -> Value {
@@ -163,9 +180,16 @@ public:
     return res;
   }
   auto operator/(this Value &self, Value &other) -> Value {
-    fmt::print("Division operation not implemented\n");
     auto res =
         Value("", self.m_value / other.m_value, 0.0, op_t::div, &self, &other);
+    return res;
+  }
+  // pow(base, exponent) — exponent stored in m_op_params[0]
+  //  d(base^exp)/d(base) = exp * base^(exp-1)
+  auto pow(T exponent) -> Value {
+    auto res =
+        Value("", std::pow(m_value, exponent), 0.0, op_t::pow, this, nullptr);
+    res.m_op_params[0] = exponent;
     return res;
   }
 
@@ -204,12 +228,33 @@ public:
     }
       return;
     case op_t::div: {
-      fmt::print("Division operation not implemented\n");
+      // d(a/b)/da = 1/b,  d(a/b)/db = -a/b^2
+      if (m_left) {
+        m_left->m_grad += (1.0 / m_right->m_value) * m_grad;
+      }
+      if (m_right) {
+        m_right->m_grad += (-m_value / m_right->m_value) * m_grad;
+      }
     }
       return;
     case op_t::tanh: {
       if (m_left) {
         m_left->m_grad += (1 - m_value * m_value) * m_grad;
+      }
+    }
+      return;
+    case op_t::exp: {
+      if (m_left) {
+        m_left->m_grad += m_value * m_grad;
+      }
+    }
+      return;
+    case op_t::pow: {
+      // d(base^exp)/d(base) = exp * base^(exp-1)
+      if (m_left) {
+        T exponent = m_op_params[0];
+        m_left->m_grad +=
+            exponent * std::pow(m_left->m_value, exponent - 1) * m_grad;
       }
     }
       return;
@@ -223,11 +268,13 @@ public:
     return;
   }
 
-  T m_value;
-  float_t m_grad; // gradient
-  op_t m_op;
-  Value<T> *m_left;
-  Value<T> *m_right;
+  T m_value{};
+  float_t m_grad{}; // gradient
+  op_t m_op{};
+  Value<T> *m_left = nullptr;
+  Value<T> *m_right = nullptr;
+  T m_op_params[k_max_op_params]{}; // per-op parameters (pow: exponent,
+                                    // leaky_relu: slope, etc.)
 };
 
 } // namespace engine

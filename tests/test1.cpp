@@ -206,6 +206,47 @@ rankdir=TB;
     REQUIRE_THAT(a.m_grad, WithinAbs(num_grad_a, 2e-3F));
     REQUIRE_THAT(b.m_grad, WithinAbs(num_grad_b, 2e-3F));
   }
+
+  SECTION("division backpropagation") {
+    //  d(a/b)/da = 1/b,  d(a/b)/db = -a/b^2
+    auto a = engine::Value<float>(8.F, "a");
+    auto b = engine::Value<float>(2.F, "b");
+    auto v = (a / b).with_id("v");
+    engine::graph<float> g(&v);
+    g.back_propagate();
+    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(a.m_grad, WithinAbs(0.5F, 1e-6));  // 1/2
+    REQUIRE_THAT(b.m_grad, WithinAbs(-2.0F, 1e-6)); // -8/4
+  }
+
+  SECTION("power backpropagation") {
+    //  d(base^exp)/d(base) = exp * base^(exp-1)
+    //  pow(a, 2) = a^2, da = 2*a
+    auto a = engine::Value<float>(3.F, "a");
+    auto v = a.pow(2.0F).with_id("v"); // v = a^2 = 9
+    engine::graph<float> g(&v);
+    g.back_propagate();
+    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(a.m_grad, WithinAbs(6.0F, 1e-6)); // 2*3
+  }
+
+  SECTION("pow in chain backpropagation") {
+    //  v = (a * b)^3
+    //  dv/da = 3*(a*b)^2 * b,  dv/db = 3*(a*b)^2 * a
+    auto a = engine::Value<float>(2.F, "a");
+    auto b = engine::Value<float>(3.F, "b");
+    auto prod = (a * b).with_id("prod"); // 6
+    auto v = prod.pow(3.0F).with_id("v");  // 216
+    engine::graph<float> g(&v);
+    g.back_propagate();
+    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
+    // prod grad: 3 * 6^2 = 108
+    REQUIRE_THAT(prod.m_grad, WithinAbs(108.0F, 1e-6));
+    // a grad: 108 * b = 108 * 3 = 324
+    REQUIRE_THAT(a.m_grad, WithinAbs(324.0F, 1e-6));
+    // b grad: 108 * a = 108 * 2 = 216
+    REQUIRE_THAT(b.m_grad, WithinAbs(216.0F, 1e-6));
+  }
 }
 
 // NOLINTEND(*-magic-numbers, *-identifier-length, *-avoid-do-while)
