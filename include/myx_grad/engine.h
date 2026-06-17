@@ -13,14 +13,14 @@ namespace engine {
 
 using float_t = double;
 
-template <typename T> class scalar;
+template <typename T> class Value;
 
 } // namespace engine
 
 // std::hash specialization (must be in std namespace)
 namespace std {
-template <typename T> struct hash<engine::scalar<T>> {
-  auto operator()(const engine::scalar<T> &s) const -> size_t;
+template <typename T> struct hash<engine::Value<T>> {
+  auto operator()(const engine::Value<T> &s) const -> size_t;
 };
 } // namespace std
 
@@ -45,9 +45,9 @@ inline auto to_string(op_t o) -> std::string {
   }
 }
 
-template <typename T> struct node {
+template <typename T> struct Node {
   static inline int count = 0;
-  explicit node(std::string label, std::string id = "",
+  explicit Node(std::string label, std::string id = "",
                 std::string shape = "box")
       : m_label(std::move(label)),
         m_id(id.empty() ? "node_" + std::to_string(count) : id),
@@ -60,7 +60,7 @@ template <typename T> struct node {
 };
 
 template <typename T>
-inline auto to_string(engine::scalar<T> node) -> std::string {
+inline auto to_string(engine::Value<T> node) -> std::string {
   return fmt::format(
       "{} [label=\"id: {} | value: {} | grad: {} | op: {} \", shape={}]",
       node.m_id, node.m_id, node.m_label, node.m_grad, to_string(node.m_op),
@@ -68,13 +68,13 @@ inline auto to_string(engine::scalar<T> node) -> std::string {
 }
 
 template <typename T> struct graph {
-  explicit graph(scalar<T> *root) : m_root(root) {}
+  explicit graph(Value<T> *root) : m_root(root) {}
 
   auto display() -> std::string {
-    scalar<T> *cur = m_root;
+    Value<T> *cur = m_root;
     std::string node_str;
     std::string edge_str;
-    std::vector<scalar<T> *> stk;
+    std::vector<Value<T> *> stk;
     stk.push_back(cur);
     while (!stk.empty()) {
       cur = stk.back();
@@ -93,9 +93,9 @@ template <typename T> struct graph {
   }
 
   auto back_propagate() {
-    std::vector<engine::scalar<T> *> v;
-    std::function<void(engine::scalar<T> *)> build_tokological;
-    build_tokological = [&](engine::scalar<T> *s) -> void {
+    std::vector<engine::Value<T> *> v;
+    std::function<void(engine::Value<T> *)> build_tokological;
+    build_tokological = [&](engine::Value<T> *s) -> void {
       if (!s) {
         return;
       }
@@ -110,10 +110,10 @@ template <typename T> struct graph {
     }
   }
 
-  engine::scalar<T> *m_root;
+  engine::Value<T> *m_root;
 };
 
-template <typename T> class scalar : public node<T> {
+template <typename T> class Value : public Node<T> {
 public:
   static auto label(T val) -> std::string {
     if constexpr (std::is_floating_point_v<T>) {
@@ -122,45 +122,45 @@ public:
       return fmt::format("s[{}]", val);
     }
   }
-  scalar(std::string id, T val, float_t grad, op_t op, scalar<T> *left,
-         scalar<T> *right)
-      : node<T>(label(val), id), m_value(val), m_op(op), m_grad(grad),
+  Value(std::string id, T val, float_t grad, op_t op, Value<T> *left,
+        Value<T> *right)
+      : Node<T>(label(val), id), m_value(val), m_op(op), m_grad(grad),
         m_left(left), m_right(right) {}
 
-  explicit scalar(T val) : scalar("", val, 0.0, op_t::nop, nullptr, nullptr) {}
+  explicit Value(T val) : Value("", val, 0.0, op_t::nop, nullptr, nullptr) {}
 
-  scalar(T val, std::string id)
-      : scalar(id, val, 0.0, op_t::nop, nullptr, nullptr) {}
+  Value(T val, std::string id)
+      : Value(id, val, 0.0, op_t::nop, nullptr, nullptr) {}
 
   auto value() const -> T { return m_value; }
-  auto with_id(std::string id) -> scalar & {
+  auto with_id(std::string id) -> Value & {
     this->m_id = id;
     return *this;
   }
 
-  auto operator+(this scalar &self, scalar &other) -> scalar {
+  auto operator+(this Value &self, Value &other) -> Value {
     auto res =
-        scalar("", self.m_value + other.m_value, 0.0, op_t::add, &self, &other);
+        Value("", self.m_value + other.m_value, 0.0, op_t::add, &self, &other);
     return res;
   }
-  auto operator-(this scalar &self, scalar &other) -> scalar {
+  auto operator-(this Value &self, Value &other) -> Value {
     auto res =
-        scalar("", self.m_value - other.m_value, 0.0, op_t::sub, &self, &other);
+        Value("", self.m_value - other.m_value, 0.0, op_t::sub, &self, &other);
     return res;
   }
-  auto operator*(this scalar &self, scalar &other) -> scalar {
+  auto operator*(this Value &self, Value &other) -> Value {
     auto res =
-        scalar("", self.m_value * other.m_value, 0.0, op_t::mul, &self, &other);
+        Value("", self.m_value * other.m_value, 0.0, op_t::mul, &self, &other);
     return res;
   }
-  auto operator/(this scalar &self, scalar &other) -> scalar {
+  auto operator/(this Value &self, Value &other) -> Value {
     fmt::print("Division operation not implemented\n");
     auto res =
-        scalar("", self.m_value / other.m_value, 0.0, op_t::div, &self, &other);
+        Value("", self.m_value / other.m_value, 0.0, op_t::div, &self, &other);
     return res;
   }
 
-  auto operator==(scalar &other) const -> bool {
+  auto operator==(Value &other) const -> bool {
     return this->m_id == other.m_id;
   }
 
@@ -205,15 +205,15 @@ public:
   T m_value;
   float_t m_grad; // gradient
   op_t m_op;
-  scalar<T> *m_left;
-  scalar<T> *m_right;
+  Value<T> *m_left;
+  Value<T> *m_right;
 };
 
 } // namespace engine
 
 namespace std {
 template <typename T>
-auto hash<engine::scalar<T>>::operator()(const engine::scalar<T> &s) const
+auto hash<engine::Value<T>>::operator()(const engine::Value<T> &s) const
     -> size_t {
   return std::hash<T>{}(s.value());
 }
