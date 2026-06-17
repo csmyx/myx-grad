@@ -6,18 +6,9 @@
 #include <myx_grad/engine.h>
 using namespace Catch::Matchers;
 
-TEST_CASE("test value", "[engine]") {
-  {
+// NOLINTBEGIN(*-magic-numbers, *-identifier-length, *-avoid-do-while)
 
-    auto const val = engine::Value<int>(5);
-    REQUIRE(val.value() == 5);
-    auto const val1 = engine::Value<int>(3);
-    REQUIRE(val1.value() == 3);
-    REQUIRE(val.value() + val1.value() == 8);
-    REQUIRE(val.value() - val1.value() == 2);
-    REQUIRE(val.value() * val1.value() == 15);
-    REQUIRE(val.value() / val1.value() == 1);
-  }
+TEST_CASE("test value", "[engine]") {
 
   auto print_dot = [](engine::graph<float> graph,
                       const std::string &file_name) {
@@ -37,7 +28,18 @@ rankdir=TB;
     }
   };
 
-  {
+  SECTION("basic Value creation and arithmetic") {
+    auto const val = engine::Value<int>(5);
+    REQUIRE(val.value() == 5);
+    auto const val1 = engine::Value<int>(3);
+    REQUIRE(val1.value() == 3);
+    REQUIRE(val.value() + val1.value() == 8);
+    REQUIRE(val.value() - val1.value() == 2);
+    REQUIRE(val.value() * val1.value() == 15);
+    REQUIRE(val.value() / val1.value() == 1);
+  }
+
+  SECTION("simple addition with graph output") {
     auto val1 = engine::Value<float>(2.5f);
     auto val2 = engine::Value<float>(3.5f);
 
@@ -49,8 +51,7 @@ rankdir=TB;
     print_dot(g, "graph1.dot");
   }
 
-  // test: backpropagation
-  {
+  SECTION("multiplication chain backpropagation") {
     // v5 = (v1 + v2) * v4
     auto val1 = engine::Value<float>(2.F, "n1");
     auto val2 = engine::Value<float>(3.F, "n2");
@@ -67,8 +68,7 @@ rankdir=TB;
     REQUIRE(val1.m_grad == 4.0F);
   }
 
-  // test: use the same value as input multiple times
-  {
+  SECTION("shared input value") {
     auto val1 = engine::Value<float>(3.F, "n1");
     auto val2 = (val1 + val1).with_id("n2");
     engine::graph<float> g(&val2);
@@ -77,9 +77,7 @@ rankdir=TB;
     REQUIRE(val1.m_grad == 2.0F);
   }
 
-  // test: implement tanh
-  {
-
+  SECTION("tanh activation backpropagation") {
     auto x1 = engine::Value<float>(2.F, "x1");
     auto x2 = engine::Value<float>(0.F, "x2");
     auto w1 = engine::Value<float>(-3.F, "w1");
@@ -103,10 +101,8 @@ rankdir=TB;
     REQUIRE_THAT(x2.m_grad, WithinAbs(0.5F, 1e-6));
   }
 
-  // test: subtraction backpropagation
-  //  d(a-b)/da = 1, d(a-b)/db = -1
-  {
-
+  SECTION("subtraction backpropagation") {
+    //  d(a-b)/da = 1, d(a-b)/db = -1
     auto a = engine::Value<float>(5.F, "a");
     auto b = engine::Value<float>(3.F, "b");
     auto c = (a - b).with_id("c");
@@ -117,9 +113,9 @@ rankdir=TB;
     REQUIRE_THAT(b.m_grad, WithinAbs(-1.0F, 1e-6));
   }
 
-  // test: deeper chain  v = (a*b + c) * d
-  //  dv/da = d * b,  dv/db = d * a,  dv/dc = d * 1,  dv/dd = a*b + c
-  {
+  SECTION("deeper chain backpropagation") {
+    //  v = (a*b + c) * d
+    //  dv/da = d * b,  dv/db = d * a,  dv/dc = d * 1,  dv/dd = a*b + c
     auto a = engine::Value<float>(2.F, "a");
     auto b = engine::Value<float>(3.F, "b");
     auto c = engine::Value<float>(1.F, "c");
@@ -138,11 +134,9 @@ rankdir=TB;
     REQUIRE_THAT(b.m_grad, WithinAbs(8.0F, 1e-6));   // d * a
   }
 
-  // test: DAG with shared node — a used in two paths: a*b + a*c
-  //  v = a*b + a*c
-  //  dv/da = b + c,  dv/db = a,  dv/dc = a
-  {
-
+  SECTION("DAG with shared node") {
+    //  v = a*b + a*c
+    //  dv/da = b + c,  dv/db = a,  dv/dc = a
     auto a = engine::Value<float>(2.F, "a");
     auto b = engine::Value<float>(3.F, "b");
     auto c = engine::Value<float>(5.F, "c");
@@ -160,13 +154,12 @@ rankdir=TB;
     REQUIRE_THAT(c.m_grad, WithinAbs(2.0F, 1e-6)); // a
   }
 
-  // test: subtract same value  a - a = 0,  da = 1 + (-1) = 0
-  // The gradient should cancel out since the node contributes to both left and
-  // right. But in our engine, `a` is the same pointer for both sides, so m_grad
-  // sums twice. Expected: m_left contributes +1, m_right contributes -1 → net 0
-  // for a.
-  {
-
+  SECTION("subtract same value") {
+    //  a - a = 0,  da = 1 + (-1) = 0
+    // The gradient should cancel out since the node contributes to both left
+    // and right. In our engine, `a` is the same pointer for both sides, so
+    // m_grad sums twice. Expected: m_left contributes +1, m_right contributes
+    // -1 → net 0 for a.
     auto a = engine::Value<float>(7.F, "a");
     auto v = (a - a).with_id("v");
     engine::graph<float> g(&v);
@@ -175,16 +168,14 @@ rankdir=TB;
     REQUIRE_THAT(a.m_grad, WithinAbs(0.0F, 1e-6));
   }
 
-  // test: numerical gradient check (finite differences)
-  //  f = a*b + tanh(a+b) + a - b
-  //  Compare autograd against central finite differences for each leaf.
-  {
-
+  SECTION("numerical gradient check with finite differences") {
+    //  f = a*b + tanh(a+b) + a - b
+    //  Compare autograd against central finite differences for each leaf.
     const float h = 1e-4F;
 
     // Define f(a,b) = a*b + tanh(a+b) + a - b
     auto compute = [](float av, float bv) -> float {
-      return av * bv + std::tanh(av + bv) + av - bv;
+      return (av * bv) + std::tanh(av + bv) + av - bv;
     };
 
     // Analytical gradients:
@@ -216,3 +207,5 @@ rankdir=TB;
     REQUIRE_THAT(b.m_grad, WithinAbs(num_grad_b, 2e-3F));
   }
 }
+
+// NOLINTEND(*-magic-numbers, *-identifier-length, *-avoid-do-while)
