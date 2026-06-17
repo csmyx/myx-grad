@@ -26,7 +26,7 @@ template <typename T> struct hash<engine::Value<T>> {
 
 namespace engine {
 
-enum class op_t : std::uint8_t { nop, add, sub, mul, div };
+enum class op_t : std::uint8_t { nop, add, sub, mul, div, tanh };
 
 inline auto to_string(op_t o) -> std::string {
   switch (o) {
@@ -38,23 +38,31 @@ inline auto to_string(op_t o) -> std::string {
     return "*";
   case op_t::div:
     return "/";
+  case op_t::tanh:
+    return "tanh";
   case op_t::nop:
-    return "<nop>";
+    return "nop";
   default:
     return "UNKNOWN";
   }
 }
 
+template <typename T> static auto format_v(T val) -> std::string {
+  if constexpr (std::is_floating_point_v<T>) {
+    return fmt::format("s[{:.6f}]", val);
+  }
+  return fmt::format("s[{}]", val);
+}
+
 template <typename T> struct Node {
   static inline int count = 0;
-  explicit Node(std::string label, std::string id = "",
-                std::string shape = "box")
-      : m_label(std::move(label)),
+  explicit Node(T value, std::string id = "", std::string shape = "record")
+      : m_value(std::move(value)),
         m_id(id.empty() ? "node_" + std::to_string(count) : id),
         m_shape(std::move(shape)) {
     ++count;
   }
-  std::string m_label;
+  T m_value;
   std::string m_id;
   std::string m_shape;
 };
@@ -62,9 +70,9 @@ template <typename T> struct Node {
 template <typename T>
 inline auto to_string(engine::Value<T> node) -> std::string {
   return fmt::format(
-      "{} [label=\"id: {} | value: {} | grad: {} | op: {} \", shape={}]",
-      node.m_id, node.m_id, node.m_label, node.m_grad, to_string(node.m_op),
-      node.m_shape);
+      "{} [label=\"{{id: {} | value: {} | grad: {} | op: {}}}\", shape={}]",
+      node.m_id, node.m_id, format_v(node.m_value), format_v(node.m_grad),
+      to_string(node.m_op), node.m_shape);
 }
 
 template <typename T> struct graph {
@@ -103,6 +111,7 @@ template <typename T> struct graph {
       build_tokological(s->m_right);
       v.push_back(s);
     };
+    // set root gradient to 1.0
     m_root->m_grad = 1.0;
     build_tokological(m_root);
     for (auto it = v.rbegin(); it != v.rend(); ++it) {
@@ -115,17 +124,10 @@ template <typename T> struct graph {
 
 template <typename T> class Value : public Node<T> {
 public:
-  static auto label(T val) -> std::string {
-    if constexpr (std::is_floating_point_v<T>) {
-      return fmt::format("s[{:.3f}]", val);
-    } else {
-      return fmt::format("s[{}]", val);
-    }
-  }
   Value(std::string id, T val, float_t grad, op_t op, Value<T> *left,
         Value<T> *right)
-      : Node<T>(label(val), id), m_value(val), m_op(op), m_grad(grad),
-        m_left(left), m_right(right) {}
+      : Node<T>(val, id), m_value(val), m_op(op), m_grad(grad), m_left(left),
+        m_right(right) {}
 
   explicit Value(T val) : Value("", val, 0.0, op_t::nop, nullptr, nullptr) {}
 
@@ -136,6 +138,13 @@ public:
   auto with_id(std::string id) -> Value & {
     this->m_id = id;
     return *this;
+  }
+
+  auto tanh() -> Value {
+    auto exp2x = std::exp(2 * m_value);
+    auto value = (exp2x - 1) / (exp2x + 1);
+    auto res = Value("", value, 0.0, op_t::tanh, this, nullptr);
+    return res;
   }
 
   auto operator+(this Value &self, Value &other) -> Value {
@@ -166,40 +175,52 @@ public:
 
   auto back_propagate() {
     switch (m_op) {
-    case op_t::add:
+    case op_t::add: {
+
       if (m_left) {
         m_left->m_grad += 1.0 * m_grad;
       }
       if (m_right) {
         m_right->m_grad += 1.0 * m_grad;
       }
+    }
       return;
-    case op_t::sub:
+    case op_t::sub: {
       if (m_left) {
         m_left->m_grad += -1.0 * m_grad;
       }
       if (m_right) {
         m_right->m_grad += -1.0 * m_grad;
       }
+    }
       return;
-    case op_t::mul:
+    case op_t::mul: {
       if (m_left) {
         m_left->m_grad += m_right->m_value * m_grad;
       }
       if (m_right) {
         m_right->m_grad += m_left->m_value * m_grad;
       }
+    }
       return;
-    case op_t::div:
+    case op_t::div: {
       fmt::print("Division operation not implemented\n");
+    }
       return;
-    case op_t::nop:
+    case op_t::tanh: {
+      if (m_left) {
+        m_left->m_grad += (1 - m_value * m_value) * m_grad;
+      }
+    }
+      return;
+    case op_t::nop: {
+    }
       return;
     default:
       fmt::print("Unhandled operation\n");
       std::abort();
-      return;
     }
+    return;
   }
 
   T m_value;

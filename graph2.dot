@@ -1,11 +1,11 @@
 digraph ComputeGraph {
 rankdir=TB;
 
-n5 [label="id: n5 | value: s[20.000] | grad: 1 | op: * ", shape=box]
-n4 [label="id: n4 | value: s[4.000] | grad: 5 | op: <nop> ", shape=box]
-n3 [label="id: n3 | value: s[5.000] | grad: 4 | op: + ", shape=box]
-n2 [label="id: n2 | value: s[3.000] | grad: 4 | op: <nop> ", shape=box]
-n1 [label="id: n1 | value: s[2.000] | grad: 4 | op: <nop> ", shape=box]
+n5 [label="{id: n5 | value: s[20.000000] | grad: s[1.000000] | op: *}", shape=record]
+n4 [label="{id: n4 | value: s[4.000000] | grad: s[5.000000] | op: nop}", shape=record]
+n3 [label="{id: n3 | value: s[5.000000] | grad: s[4.000000] | op: +}", shape=record]
+n2 [label="{id: n2 | value: s[3.000000] | grad: s[4.000000] | op: nop}", shape=record]
+n1 [label="{id: n1 | value: s[2.000000] | grad: s[4.000000] | op: nop}", shape=record]
 n3 -> n5;
 n4 -> n5;
 n1 -> n3;

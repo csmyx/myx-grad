@@ -1,9 +1,9 @@
 digraph ComputeGraph {
 rankdir=TB;
 
-node_2 [label="id: node_2 | value: s[6.000] | grad: 1 | op: + ", shape=box]
-node_1 [label="id: node_1 | value: s[3.500] | grad: 1 | op: <nop> ", shape=box]
-node_0 [label="id: node_0 | value: s[2.500] | grad: 1 | op: <nop> ", shape=box]
+node_2 [label="{id: node_2 | value: s[6.000000] | grad: s[1.000000] | op: +}", shape=record]
+node_1 [label="{id: node_1 | value: s[3.500000] | grad: s[1.000000] | op: nop}", shape=record]
+node_0 [label="{id: node_0 | value: s[2.500000] | grad: s[1.000000] | op: nop}", shape=record]
 node_0 -> node_2;
 node_1 -> node_2;
 

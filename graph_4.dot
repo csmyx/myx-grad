@@ -1,0 +1,24 @@
+digraph ComputeGraph {
+rankdir=TB;
+
+o [label="{id: o | value: s[0.707107] | grad: s[1.000000] | op: tanh}", shape=record]
+n [label="{id: n | value: s[0.881373] | grad: s[0.500000] | op: +}", shape=record]
+b [label="{id: b | value: s[6.881373] | grad: s[0.500000] | op: nop}", shape=record]
+wx [label="{id: wx | value: s[-6.000000] | grad: s[0.500000] | op: +}", shape=record]
+wx2 [label="{id: wx2 | value: s[0.000000] | grad: s[0.500000] | op: *}", shape=record]
+w2 [label="{id: w2 | value: s[1.000000] | grad: s[0.000000] | op: nop}", shape=record]
+x2 [label="{id: x2 | value: s[0.000000] | grad: s[0.500000] | op: nop}", shape=record]
+wx1 [label="{id: wx1 | value: s[-6.000000] | grad: s[0.500000] | op: *}", shape=record]
+w1 [label="{id: w1 | value: s[-3.000000] | grad: s[1.000000] | op: nop}", shape=record]
+x1 [label="{id: x1 | value: s[2.000000] | grad: s[-1.500000] | op: nop}", shape=record]
+n -> o;
+wx -> n;
+b -> n;
+wx1 -> wx;
+wx2 -> wx;
+x2 -> wx2;
+w2 -> wx2;
+x1 -> wx1;
+w1 -> wx1;
+
+}
