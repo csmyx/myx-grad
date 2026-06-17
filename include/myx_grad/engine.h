@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <fmt/format.h>
 #include <functional>
+#include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -89,17 +90,91 @@ inline auto to_string(engine::Value<T> node) -> std::string {
 }
 
 template <typename T> struct graph {
-  explicit graph(Value<T> *root) : m_root(root) {}
+  std::vector<std::unique_ptr<Value<T>>> m_nodes; // arena ownership
 
-  auto display() -> std::string {
-    Value<T> *cur = m_root;
+  // ---- factory methods ----
+
+  auto leaf(T val, std::string id = "") -> Value<T> & {
+    auto node = std::make_unique<Value<T>>(val, id);
+    auto &ref = *node;
+    m_nodes.push_back(std::move(node));
+    return ref;
+  }
+
+  auto add(Value<T> &left, Value<T> &right) -> Value<T> & {
+    auto node = std::make_unique<Value<T>>("", left.m_value + right.m_value,
+                                           0.0, op_t::add, &left, &right);
+    auto &ref = *node;
+    m_nodes.push_back(std::move(node));
+    return ref;
+  }
+
+  auto sub(Value<T> &left, Value<T> &right) -> Value<T> & {
+    auto node = std::make_unique<Value<T>>("", left.m_value - right.m_value,
+                                           0.0, op_t::sub, &left, &right);
+    auto &ref = *node;
+    m_nodes.push_back(std::move(node));
+    return ref;
+  }
+
+  auto mul(Value<T> &left, Value<T> &right) -> Value<T> & {
+    auto node = std::make_unique<Value<T>>("", left.m_value * right.m_value,
+                                           0.0, op_t::mul, &left, &right);
+    auto &ref = *node;
+    m_nodes.push_back(std::move(node));
+    return ref;
+  }
+
+  auto div(Value<T> &left, Value<T> &right) -> Value<T> & {
+    auto node = std::make_unique<Value<T>>("", left.m_value / right.m_value,
+                                           0.0, op_t::div, &left, &right);
+    auto &ref = *node;
+    m_nodes.push_back(std::move(node));
+    return ref;
+  }
+
+  auto pow(Value<T> &base, T exponent) -> Value<T> & {
+    auto node = std::make_unique<Value<T>>("", std::pow(base.m_value, exponent),
+                                           0.0, op_t::pow, &base, nullptr);
+    node->m_op_params[0] = exponent;
+    auto &ref = *node;
+    m_nodes.push_back(std::move(node));
+    return ref;
+  }
+
+  auto tanh(Value<T> &x) -> Value<T> & {
+    auto exp2x = std::exp(2 * x.m_value);
+    auto val = (exp2x - 1) / (exp2x + 1);
+    auto node =
+        std::make_unique<Value<T>>("", val, 0.0, op_t::tanh, &x, nullptr);
+    auto &ref = *node;
+    m_nodes.push_back(std::move(node));
+    return ref;
+  }
+
+  auto exp(Value<T> &x) -> Value<T> & {
+    auto node = std::make_unique<Value<T>>("", std::exp(x.m_value), 0.0,
+                                           op_t::exp, &x, nullptr);
+    auto &ref = *node;
+    m_nodes.push_back(std::move(node));
+    return ref;
+  }
+
+  // ---- display ----
+
+  auto display(Value<T> &root) -> std::string {
+    Value<T> *cur = &root;
     std::string node_str;
     std::string edge_str;
     std::vector<Value<T> *> stk;
+    std::unordered_set<Value<T> *> seen;
     stk.push_back(cur);
     while (!stk.empty()) {
       cur = stk.back();
       stk.pop_back();
+      if (seen.contains(cur))
+        continue;
+      seen.insert(cur);
       node_str += to_string(*cur) + "\n";
       if (cur->m_left) {
         stk.push_back(cur->m_left);
@@ -113,11 +188,13 @@ template <typename T> struct graph {
     return node_str + edge_str;
   }
 
-  auto back_propagate() {
-    std::vector<engine::Value<T> *> topo;
-    std::unordered_set<engine::Value<T> *> visited;
-    std::function<void(engine::Value<T> *)> build_topological;
-    build_topological = [&](engine::Value<T> *s) -> void {
+  // ---- back_propagate ----
+
+  auto back_propagate(Value<T> &root) {
+    std::vector<Value<T> *> topo;
+    std::unordered_set<Value<T> *> visited;
+    std::function<void(Value<T> *)> build_topological;
+    build_topological = [&](Value<T> *s) -> void {
       if (!s || visited.contains(s) || !s->m_requires_grad) {
         return;
       }
@@ -126,15 +203,12 @@ template <typename T> struct graph {
       build_topological(s->m_right);
       topo.push_back(s);
     };
-    // set root gradient to 1.0
-    m_root->m_grad = 1.0;
-    build_topological(m_root);
+    root.m_grad = 1.0;
+    build_topological(&root);
     for (auto it = topo.rbegin(); it != topo.rend(); ++it) {
       (*it)->back_propagate();
     }
   }
-
-  engine::Value<T> *m_root;
 };
 
 template <typename T> class Value : public Node<T> {
@@ -175,6 +249,9 @@ public:
     auto res = Value("", value, 0.0, op_t::tanh, this, nullptr);
     return res;
   }
+
+  // ---- convenience operators (prefer graph::add/mul/etc for ownership safety)
+  // ----
 
   auto operator+(this Value &self, Value &other) -> Value {
     auto res =

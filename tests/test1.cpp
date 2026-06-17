@@ -10,22 +10,21 @@ using namespace Catch::Matchers;
 
 TEST_CASE("test value", "[engine]") {
 
-  auto print_dot = [](engine::graph<float> graph,
+  auto print_dot = [](engine::graph<float> &graph, engine::Value<float> &root,
                       const std::string &file_name) {
     const std::string prefix_str = R"(digraph ComputeGraph {
 rankdir=TB;
 )";
     const std::string suffix_str = "}\n";
     auto dot_str =
-        fmt::format("{}\n{}\n{}", prefix_str, graph.display(), suffix_str);
+        fmt::format("{}\n{}\n{}", prefix_str, graph.display(root), suffix_str);
 
     {
-      const std::string full_file_name = "doc/pictures/" + file_name;
-      std::ofstream dot_file(full_file_name);
+      std::ofstream dot_file(file_name);
       REQUIRE(dot_file.is_open());
       dot_file << dot_str;
       dot_file.close();
-      fmt::println("Graph written to {}", full_file_name);
+      fmt::println("Graph written to {}", file_name);
     }
   };
 
@@ -41,27 +40,26 @@ rankdir=TB;
   }
 
   SECTION("simple addition with graph output") {
-    auto val1 = engine::Value<float>(2.5f);
-    auto val2 = engine::Value<float>(3.5f);
-
-    auto val3 = val1 + val2;
-
-    engine::graph<float> g(&val3);
-    g.back_propagate();
-
-    print_dot(g, "graph1.dot");
+    engine::graph<float> g;
+    auto &v1 = g.leaf(2.5f);
+    auto &v2 = g.leaf(3.5f);
+    auto &v3 = g.add(v1, v2);
+    g.back_propagate(v3);
+    print_dot(g, v3, "graph1.dot");
   }
 
   SECTION("multiplication chain backpropagation") {
     // v5 = (v1 + v2) * v4
-    auto val1 = engine::Value<float>(2.F, "n1");
-    auto val2 = engine::Value<float>(3.F, "n2");
-    auto val3 = (val1 + val2).with_id("n3");
-    auto val4 = engine::Value<float>(4.F, "n4");
-    auto val5 = (val3 * val4).with_id("n5");
-    engine::graph<float> g(&val5);
-    g.back_propagate();
-    print_dot(g, "graph2.dot");
+    engine::graph<float> g;
+    auto &val1 = g.leaf(2.F, "n1");
+    auto &val2 = g.leaf(3.F, "n2");
+    auto &val3 = g.add(val1, val2);
+    val3.with_id("n3");
+    auto &val4 = g.leaf(4.F, "n4");
+    auto &val5 = g.mul(val3, val4);
+    val5.with_id("n5");
+    g.back_propagate(val5);
+    print_dot(g, val5, "graph2.dot");
     REQUIRE(val5.m_grad == 1.0F);
     REQUIRE(val4.m_grad == 5.0F);
     REQUIRE(val3.m_grad == 4.0F);
@@ -70,28 +68,34 @@ rankdir=TB;
   }
 
   SECTION("shared input value") {
-    auto val1 = engine::Value<float>(3.F, "n1");
-    auto val2 = (val1 + val1).with_id("n2");
-    engine::graph<float> g(&val2);
-    g.back_propagate();
-    print_dot(g, "graph3.dot");
+    engine::graph<float> g;
+    auto &val1 = g.leaf(3.F, "n1");
+    auto &val2 = g.add(val1, val1);
+    val2.with_id("n2");
+    g.back_propagate(val2);
+    print_dot(g, val2, "graph3.dot");
     REQUIRE(val1.m_grad == 2.0F);
   }
 
   SECTION("tanh activation backpropagation") {
-    auto x1 = engine::Value<float>(2.F, "x1");
-    auto x2 = engine::Value<float>(0.F, "x2");
-    auto w1 = engine::Value<float>(-3.F, "w1");
-    auto w2 = engine::Value<float>(1.F, "w2");
-    auto b = engine::Value<float>(6.8813735870195432F, "b");
-    auto wx1 = (x1 * w1).with_id("wx1");
-    auto wx2 = (x2 * w2).with_id("wx2");
-    auto wx = (wx1 + wx2).with_id("wx");
-    auto n = (wx + b).with_id("n");
-    auto o = n.tanh().with_id("o");
-    engine::graph<float> g(&o);
-    g.back_propagate();
-    print_dot(g, "graph_4.dot");
+    engine::graph<float> g;
+    auto &x1 = g.leaf(2.F, "x1");
+    auto &x2 = g.leaf(0.F, "x2");
+    auto &w1 = g.leaf(-3.F, "w1");
+    auto &w2 = g.leaf(1.F, "w2");
+    auto &b = g.leaf(6.8813735870195432F, "b");
+    auto &wx1 = g.mul(x1, w1);
+    wx1.with_id("wx1");
+    auto &wx2 = g.mul(x2, w2);
+    wx2.with_id("wx2");
+    auto &wx = g.add(wx1, wx2);
+    wx.with_id("wx");
+    auto &n = g.add(wx, b);
+    n.with_id("n");
+    auto &o = g.tanh(n);
+    o.with_id("o");
+    g.back_propagate(o);
+    print_dot(g, o, "graph_4.dot");
     REQUIRE_THAT(o.m_grad, WithinAbs(1.0F, 1e-6));
     REQUIRE_THAT(n.m_grad, WithinAbs(0.5F, 1e-6));
     REQUIRE_THAT(wx1.m_grad, WithinAbs(0.5F, 1e-6));
@@ -104,11 +108,12 @@ rankdir=TB;
 
   SECTION("subtraction backpropagation") {
     //  d(a-b)/da = 1, d(a-b)/db = -1
-    auto a = engine::Value<float>(5.F, "a");
-    auto b = engine::Value<float>(3.F, "b");
-    auto c = (a - b).with_id("c");
-    engine::graph<float> g(&c);
-    g.back_propagate();
+    engine::graph<float> g;
+    auto &a = g.leaf(5.F, "a");
+    auto &b = g.leaf(3.F, "b");
+    auto &c = g.sub(a, b);
+    c.with_id("c");
+    g.back_propagate(c);
     REQUIRE_THAT(c.m_grad, WithinAbs(1.0F, 1e-6));
     REQUIRE_THAT(a.m_grad, WithinAbs(1.0F, 1e-6));
     REQUIRE_THAT(b.m_grad, WithinAbs(-1.0F, 1e-6));
@@ -116,16 +121,18 @@ rankdir=TB;
 
   SECTION("deeper chain backpropagation") {
     //  v = (a*b + c) * d
-    //  dv/da = d * b,  dv/db = d * a,  dv/dc = d * 1,  dv/dd = a*b + c
-    auto a = engine::Value<float>(2.F, "a");
-    auto b = engine::Value<float>(3.F, "b");
-    auto c = engine::Value<float>(1.F, "c");
-    auto d = engine::Value<float>(4.F, "d");
-    auto ab = (a * b).with_id("ab");    // 6
-    auto abc = (ab + c).with_id("abc"); // 7
-    auto v = (abc * d).with_id("v");    // 28
-    engine::graph<float> g(&v);
-    g.back_propagate();
+    engine::graph<float> g;
+    auto &a = g.leaf(2.F, "a");
+    auto &b = g.leaf(3.F, "b");
+    auto &c = g.leaf(1.F, "c");
+    auto &d = g.leaf(4.F, "d");
+    auto &ab = g.mul(a, b);
+    ab.with_id("ab"); // 6
+    auto &abc = g.add(ab, c);
+    abc.with_id("abc"); // 7
+    auto &v = g.mul(abc, d);
+    v.with_id("v"); // 28
+    g.back_propagate(v);
     REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
     REQUIRE_THAT(abc.m_grad, WithinAbs(4.0F, 1e-6)); // d
     REQUIRE_THAT(d.m_grad, WithinAbs(7.0F, 1e-6));   // a*b+c
@@ -137,15 +144,17 @@ rankdir=TB;
 
   SECTION("DAG with shared node") {
     //  v = a*b + a*c
-    //  dv/da = b + c,  dv/db = a,  dv/dc = a
-    auto a = engine::Value<float>(2.F, "a");
-    auto b = engine::Value<float>(3.F, "b");
-    auto c = engine::Value<float>(5.F, "c");
-    auto ab = (a * b).with_id("ab"); // 6
-    auto ac = (a * c).with_id("ac"); // 10
-    auto v = (ab + ac).with_id("v"); // 16
-    engine::graph<float> g(&v);
-    g.back_propagate();
+    engine::graph<float> g;
+    auto &a = g.leaf(2.F, "a");
+    auto &b = g.leaf(3.F, "b");
+    auto &c = g.leaf(5.F, "c");
+    auto &ab = g.mul(a, b);
+    ab.with_id("ab"); // 6
+    auto &ac = g.mul(a, c);
+    ac.with_id("ac"); // 10
+    auto &v = g.add(ab, ac);
+    v.with_id("v"); // 16
+    g.back_propagate(v);
     REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
     REQUIRE_THAT(ab.m_grad, WithinAbs(1.0F, 1e-6));
     REQUIRE_THAT(ac.m_grad, WithinAbs(1.0F, 1e-6));
@@ -156,46 +165,39 @@ rankdir=TB;
   }
 
   SECTION("subtract same value") {
-    //  a - a = 0,  da = 1 + (-1) = 0
-    // The gradient should cancel out since the node contributes to both left
-    // and right. In our engine, `a` is the same pointer for both sides, so
-    // m_grad sums twice. Expected: m_left contributes +1, m_right contributes
-    // -1 → net 0 for a.
-    auto a = engine::Value<float>(7.F, "a");
-    auto v = (a - a).with_id("v");
-    engine::graph<float> g(&v);
-    g.back_propagate();
+    engine::graph<float> g;
+    auto &a = g.leaf(7.F, "a");
+    auto &v = g.sub(a, a);
+    v.with_id("v");
+    g.back_propagate(v);
     REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
     REQUIRE_THAT(a.m_grad, WithinAbs(0.0F, 1e-6));
   }
 
   SECTION("numerical gradient check with finite differences") {
-    //  f = a*b + tanh(a+b) + a - b
-    //  Compare autograd against central finite differences for each leaf.
     const float h = 1e-4F;
 
-    // Define f(a,b) = a*b + tanh(a+b) + a - b
     auto compute = [](float av, float bv) -> float {
       return (av * bv) + std::tanh(av + bv) + av - bv;
     };
 
-    // Analytical gradients:
-    //  df/da = b + (1 - tanh(a+b)^2) + 1
-    //  df/db = a + (1 - tanh(a+b)^2) - 1
+    engine::graph<float> g;
+    auto &a = g.leaf(1.5F, "a");
+    auto &b = g.leaf(0.8F, "b");
+    auto &prod = g.mul(a, b);
+    prod.with_id("prod");
+    auto &sum_ab = g.add(a, b);
+    sum_ab.with_id("sum");
+    auto &th = g.tanh(sum_ab);
+    th.with_id("th");
+    auto &th_plus_a = g.add(th, a);
+    th_plus_a.with_id("th_plus_a");
+    auto &v = g.add(prod, th_plus_a);
+    v.with_id("v");
+    auto &final_v = g.sub(v, b);
+    final_v.with_id("final");
+    g.back_propagate(final_v);
 
-    // Build the expression graph once with autograd
-    auto a = engine::Value<float>(1.5F, "a");
-    auto b = engine::Value<float>(0.8F, "b");
-    auto prod = (a * b).with_id("prod");
-    auto sum_ab = (a + b).with_id("sum");
-    auto th = sum_ab.tanh().with_id("th");
-    auto th_plus_a = (th + a).with_id("th_plus_a");
-    auto v = (prod + th_plus_a).with_id("v");
-    auto final_v = (v - b).with_id("final");
-    engine::graph<float> g(&final_v);
-    g.back_propagate();
-
-    // Compute numerical gradients via central finite differences
     float f0 = compute(1.5F, 0.8F);
     float f_ap = compute(1.5F + h, 0.8F);
     float f_am = compute(1.5F - h, 0.8F);
@@ -210,11 +212,12 @@ rankdir=TB;
 
   SECTION("division backpropagation") {
     //  d(a/b)/da = 1/b,  d(a/b)/db = -a/b^2
-    auto a = engine::Value<float>(8.F, "a");
-    auto b = engine::Value<float>(2.F, "b");
-    auto v = (a / b).with_id("v");
-    engine::graph<float> g(&v);
-    g.back_propagate();
+    engine::graph<float> g;
+    auto &a = g.leaf(8.F, "a");
+    auto &b = g.leaf(2.F, "b");
+    auto &v = g.div(a, b);
+    v.with_id("v");
+    g.back_propagate(v);
     REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
     REQUIRE_THAT(a.m_grad, WithinAbs(0.5F, 1e-6));  // 1/2
     REQUIRE_THAT(b.m_grad, WithinAbs(-2.0F, 1e-6)); // -8/4
@@ -222,24 +225,25 @@ rankdir=TB;
 
   SECTION("power backpropagation") {
     //  d(base^exp)/d(base) = exp * base^(exp-1)
-    //  pow(a, 2) = a^2, da = 2*a
-    auto a = engine::Value<float>(3.F, "a");
-    auto v = a.pow(2.0F).with_id("v"); // v = a^2 = 9
-    engine::graph<float> g(&v);
-    g.back_propagate();
+    engine::graph<float> g;
+    auto &a = g.leaf(3.F, "a");
+    auto &v = g.pow(a, 2.0F);
+    v.with_id("v"); // v = a^2 = 9
+    g.back_propagate(v);
     REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
     REQUIRE_THAT(a.m_grad, WithinAbs(6.0F, 1e-6)); // 2*3
   }
 
   SECTION("pow in chain backpropagation") {
     //  v = (a * b)^3
-    //  dv/da = 3*(a*b)^2 * b,  dv/db = 3*(a*b)^2 * a
-    auto a = engine::Value<float>(2.F, "a");
-    auto b = engine::Value<float>(3.F, "b");
-    auto prod = (a * b).with_id("prod");  // 6
-    auto v = prod.pow(3.0F).with_id("v"); // 216
-    engine::graph<float> g(&v);
-    g.back_propagate();
+    engine::graph<float> g;
+    auto &a = g.leaf(2.F, "a");
+    auto &b = g.leaf(3.F, "b");
+    auto &prod = g.mul(a, b);
+    prod.with_id("prod"); // 6
+    auto &v = g.pow(prod, 3.0F);
+    v.with_id("v"); // 216
+    g.back_propagate(v);
     REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
     // prod grad: 3 * 6^2 = 108
     REQUIRE_THAT(prod.m_grad, WithinAbs(108.0F, 1e-6));
@@ -252,63 +256,67 @@ rankdir=TB;
   SECTION("tanh shortcut vs manual exp-based implementation") {
     // Compare builtin tanh() against manual composition:
     //   tanh(x) = (exp(2x) - 1) / (exp(2x) + 1)
-    // Both forward value and backward gradient must match.
 
     // --- builtin tanh ---
-    auto x_builtin = engine::Value<float>(0.5F, "x");
-    auto builtin = x_builtin.tanh().with_id("builtin");
-    engine::graph<float> g_builtin(&builtin);
-    g_builtin.back_propagate();
+    engine::graph<float> g1;
+    auto &x_builtin = g1.leaf(0.5F, "x");
+    auto &builtin = g1.tanh(x_builtin);
+    builtin.with_id("builtin");
+    g1.back_propagate(builtin);
 
     // --- manual tanh via exp ---
-    auto x_manual = engine::Value<float>(0.5F, "x");
-    auto two = engine::Value<float>(2.F);
-    auto one = engine::Value<float>(1.F);
-    auto two_x = (x_manual * two).with_id("2x");
-    auto exp2x = two_x.exp().with_id("exp2x");
-    auto numerator = (exp2x - one).with_id("num");
-    auto denominator = (exp2x + one).with_id("den");
-    auto manual = (numerator / denominator).with_id("manual");
-    engine::graph<float> g_manual(&manual);
-    g_manual.back_propagate();
+    engine::graph<float> g2;
+    auto &x_manual = g2.leaf(0.5F, "x");
+    auto &two = g2.leaf(2.F);
+    two.set_requires_grad(false);
+    auto &one = g2.leaf(1.F);
+    one.set_requires_grad(false);
+    auto &two_x = g2.mul(x_manual, two);
+    two_x.with_id("2x");
+    auto &exp2x = g2.exp(two_x);
+    exp2x.with_id("exp2x");
+    auto &numerator = g2.sub(exp2x, one);
+    numerator.with_id("num");
+    auto &denominator = g2.add(exp2x, one);
+    denominator.with_id("den");
+    auto &manual = g2.div(numerator, denominator);
+    manual.with_id("manual");
+    g2.back_propagate(manual);
 
     // Forward values must match
     REQUIRE_THAT(builtin.m_value, WithinAbs(manual.m_value, 1e-6));
 
     // Gradient w.r.t x must match
-    // d(tanh(x))/dx = 1 - tanh(x)^2
     REQUIRE_THAT(x_builtin.m_grad, WithinAbs(x_manual.m_grad, 1e-6));
   }
 
   SECTION("requires_grad = false stops gradient") {
-    //  c = a * b,  b set to requires_grad=false
-    //  dc/da = b (grad flows),  dc/db = a (grad blocked)
-    auto a = engine::Value<float>(4.F, "a");
-    auto b = engine::Value<float>(3.F, "b");
+    engine::graph<float> g;
+    auto &a = g.leaf(4.F, "a");
+    auto &b = g.leaf(3.F, "b");
     b.set_requires_grad(false);
     REQUIRE_FALSE(b.requires_grad());
     REQUIRE(a.requires_grad());
 
-    auto c = (a * b).with_id("c"); // 12
-    engine::graph<float> g(&c);
-    g.back_propagate();
+    auto &c = g.mul(a, b);
+    c.with_id("c"); // 12
+    g.back_propagate(c);
     REQUIRE_THAT(a.m_grad, WithinAbs(3.0F, 1e-6)); // dc/da = b = 3
     REQUIRE(b.m_grad == 0.0F);                     // gradient blocked
   }
 
   SECTION("frozen constant in deep chain") {
-    //  v = (a * frozen_b) + c
-    //  dv/da = frozen_b, dv/dc = 1
-    //  frozen_b gets no gradient
-    auto a = engine::Value<float>(2.F, "a");
-    auto frozen_b = engine::Value<float>(5.F, "b");
+    engine::graph<float> g;
+    auto &a = g.leaf(2.F, "a");
+    auto &frozen_b = g.leaf(5.F, "b");
     frozen_b.set_requires_grad(false);
-    auto c = engine::Value<float>(1.F, "c");
+    auto &c = g.leaf(1.F, "c");
 
-    auto prod = (a * frozen_b).with_id("prod"); // 10
-    auto v = (prod + c).with_id("v");           // 11
-    engine::graph<float> g(&v);
-    g.back_propagate();
+    auto &prod = g.mul(a, frozen_b);
+    prod.with_id("prod"); // 10
+    auto &v = g.add(prod, c);
+    v.with_id("v"); // 11
+    g.back_propagate(v);
 
     REQUIRE_THAT(a.m_grad, WithinAbs(5.0F, 1e-6));    // dv/da = frozen_b = 5
     REQUIRE(frozen_b.m_grad == 0.0F);                 // blocked
@@ -317,22 +325,22 @@ rankdir=TB;
   }
 
   SECTION("frozen intermediate node stops gradient to its children") {
-    //  v = (a*b + c) * d,  frozen the (a*b + c) sub-expression
-    //  dv/d(abc) should be blocked → a,b,c,ab get no gradient
-    //  dv/dd = abc.m_value should still flow normally
-    auto a = engine::Value<float>(2.F, "a");
-    auto b = engine::Value<float>(3.F, "b");
-    auto c_var = engine::Value<float>(1.F, "c");
-    auto d = engine::Value<float>(4.F, "d");
+    engine::graph<float> g;
+    auto &a = g.leaf(2.F, "a");
+    auto &b = g.leaf(3.F, "b");
+    auto &c_var = g.leaf(1.F, "c");
+    auto &d = g.leaf(4.F, "d");
 
-    auto ab = (a * b).with_id("ab");        // 6
-    auto abc = (ab + c_var).with_id("abc"); // 7
+    auto &ab = g.mul(a, b);
+    ab.with_id("ab"); // 6
+    auto &abc = g.add(ab, c_var);
+    abc.with_id("abc"); // 7
     abc.set_requires_grad(false);
-    auto v = (abc * d).with_id("v"); // 28
+    auto &v = g.mul(abc, d);
+    v.with_id("v"); // 28
 
-    engine::graph<float> g(&v);
-    g.back_propagate();
-    print_dot(g, "graph_requires_grad.dot");
+    g.back_propagate(v);
+    print_dot(g, v, "graph_requires_grad.dot");
 
     // d receives gradient: dv/dd = abc.m_value = 7
     REQUIRE_THAT(d.m_grad, WithinAbs(7.0F, 1e-6));
