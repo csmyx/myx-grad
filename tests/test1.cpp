@@ -4,6 +4,7 @@
 #include <fmt/core.h>
 #include <fstream>
 #include <myx_grad/engine.h>
+using namespace Catch::Matchers;
 
 TEST_CASE("test value", "[engine]") {
   {
@@ -78,7 +79,7 @@ rankdir=TB;
 
   // test: implement tanh
   {
-    using namespace Catch::Matchers;
+
     auto x1 = engine::Value<float>(2.F, "x1");
     auto x2 = engine::Value<float>(0.F, "x2");
     auto w1 = engine::Value<float>(-3.F, "w1");
@@ -100,5 +101,118 @@ rankdir=TB;
     REQUIRE_THAT(w2.m_grad, WithinAbs(0.0F, 1e-6));
     REQUIRE_THAT(x1.m_grad, WithinAbs(-1.5F, 1e-6));
     REQUIRE_THAT(x2.m_grad, WithinAbs(0.5F, 1e-6));
+  }
+
+  // test: subtraction backpropagation
+  //  d(a-b)/da = 1, d(a-b)/db = -1
+  {
+
+    auto a = engine::Value<float>(5.F, "a");
+    auto b = engine::Value<float>(3.F, "b");
+    auto c = (a - b).with_id("c");
+    engine::graph<float> g(&c);
+    g.back_propagate();
+    REQUIRE_THAT(c.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(a.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(b.m_grad, WithinAbs(-1.0F, 1e-6));
+  }
+
+  // test: deeper chain  v = (a*b + c) * d
+  //  dv/da = d * b,  dv/db = d * a,  dv/dc = d * 1,  dv/dd = a*b + c
+  {
+    auto a = engine::Value<float>(2.F, "a");
+    auto b = engine::Value<float>(3.F, "b");
+    auto c = engine::Value<float>(1.F, "c");
+    auto d = engine::Value<float>(4.F, "d");
+    auto ab = (a * b).with_id("ab");    // 6
+    auto abc = (ab + c).with_id("abc"); // 7
+    auto v = (abc * d).with_id("v");    // 28
+    engine::graph<float> g(&v);
+    g.back_propagate();
+    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(abc.m_grad, WithinAbs(4.0F, 1e-6)); // d
+    REQUIRE_THAT(d.m_grad, WithinAbs(7.0F, 1e-6));   // a*b+c
+    REQUIRE_THAT(ab.m_grad, WithinAbs(4.0F, 1e-6));  // d * 1
+    REQUIRE_THAT(c.m_grad, WithinAbs(4.0F, 1e-6));   // d * 1
+    REQUIRE_THAT(a.m_grad, WithinAbs(12.0F, 1e-6));  // d * b
+    REQUIRE_THAT(b.m_grad, WithinAbs(8.0F, 1e-6));   // d * a
+  }
+
+  // test: DAG with shared node — a used in two paths: a*b + a*c
+  //  v = a*b + a*c
+  //  dv/da = b + c,  dv/db = a,  dv/dc = a
+  {
+
+    auto a = engine::Value<float>(2.F, "a");
+    auto b = engine::Value<float>(3.F, "b");
+    auto c = engine::Value<float>(5.F, "c");
+    auto ab = (a * b).with_id("ab"); // 6
+    auto ac = (a * c).with_id("ac"); // 10
+    auto v = (ab + ac).with_id("v"); // 16
+    engine::graph<float> g(&v);
+    g.back_propagate();
+    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(ab.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(ac.m_grad, WithinAbs(1.0F, 1e-6));
+    // a accumulates gradient from both ab and ac paths: b + c = 3 + 5
+    REQUIRE_THAT(a.m_grad, WithinAbs(8.0F, 1e-6));
+    REQUIRE_THAT(b.m_grad, WithinAbs(2.0F, 1e-6)); // a
+    REQUIRE_THAT(c.m_grad, WithinAbs(2.0F, 1e-6)); // a
+  }
+
+  // test: subtract same value  a - a = 0,  da = 1 + (-1) = 0
+  // The gradient should cancel out since the node contributes to both left and
+  // right. But in our engine, `a` is the same pointer for both sides, so m_grad
+  // sums twice. Expected: m_left contributes +1, m_right contributes -1 → net 0
+  // for a.
+  {
+
+    auto a = engine::Value<float>(7.F, "a");
+    auto v = (a - a).with_id("v");
+    engine::graph<float> g(&v);
+    g.back_propagate();
+    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(a.m_grad, WithinAbs(0.0F, 1e-6));
+  }
+
+  // test: numerical gradient check (finite differences)
+  //  f = a*b + tanh(a+b) + a - b
+  //  Compare autograd against central finite differences for each leaf.
+  {
+
+    const float h = 1e-4F;
+
+    // Define f(a,b) = a*b + tanh(a+b) + a - b
+    auto compute = [](float av, float bv) -> float {
+      return av * bv + std::tanh(av + bv) + av - bv;
+    };
+
+    // Analytical gradients:
+    //  df/da = b + (1 - tanh(a+b)^2) + 1
+    //  df/db = a + (1 - tanh(a+b)^2) - 1
+
+    // Build the expression graph once with autograd
+    auto a = engine::Value<float>(1.5F, "a");
+    auto b = engine::Value<float>(0.8F, "b");
+    auto prod = (a * b).with_id("prod");
+    auto sum_ab = (a + b).with_id("sum");
+    auto th = sum_ab.tanh().with_id("th");
+    auto th_plus_a = (th + a).with_id("th_plus_a");
+    auto v = (prod + th_plus_a).with_id("v");
+    auto final_v = (v - b).with_id("final");
+    engine::graph<float> g(&final_v);
+    g.back_propagate();
+
+    // Compute numerical gradients via central finite differences
+    float f0 = compute(1.5F, 0.8F);
+    float f_ap = compute(1.5F + h, 0.8F);
+    float f_am = compute(1.5F - h, 0.8F);
+    float f_bp = compute(1.5F, 0.8F + h);
+    float f_bm = compute(1.5F, 0.8F - h);
+    float num_grad_a = (f_ap - f_am) / (2.0F * h);
+    float num_grad_b = (f_bp - f_bm) / (2.0F * h);
+
+    REQUIRE_THAT(a.m_grad, WithinAbs(num_grad_a, 2e-3F));
+    REQUIRE_THAT(b.m_grad, WithinAbs(num_grad_b, 2e-3F));
   }
 }

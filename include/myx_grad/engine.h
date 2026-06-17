@@ -187,7 +187,7 @@ public:
       return;
     case op_t::sub: {
       if (m_left) {
-        m_left->m_grad += -1.0 * m_grad;
+        m_left->m_grad += 1.0 * m_grad;
       }
       if (m_right) {
         m_right->m_grad += -1.0 * m_grad;
