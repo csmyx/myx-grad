@@ -1,0 +1,18 @@
+digraph ComputeGraph {
+rankdir=TB;
+
+v [label="{id: v | value: s[28.000000] | grad: s[1.000000] | op: *}", shape=record]
+d [label="{id: d | value: s[4.000000] | grad: s[7.000000] | op: nop}", shape=record]
+abc [label="{id: abc | value: s[7.000000] | grad: s[0.000000] | op: + | frozen}", shape=record]
+c [label="{id: c | value: s[1.000000] | grad: s[0.000000] | op: nop}", shape=record]
+ab [label="{id: ab | value: s[6.000000] | grad: s[0.000000] | op: *}", shape=record]
+b [label="{id: b | value: s[3.000000] | grad: s[0.000000] | op: nop}", shape=record]
+a [label="{id: a | value: s[2.000000] | grad: s[0.000000] | op: nop}", shape=record]
+abc -> v;
+d -> v;
+ab -> abc;
+c -> abc;
+a -> ab;
+b -> ab;
+
+}

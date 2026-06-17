@@ -80,6 +80,9 @@ inline auto to_string(engine::Value<T> node) -> std::string {
   if (node.m_op == op_t::pow) {
     label += fmt::format(" | exp: {}", format_v(node.m_op_params[0]));
   }
+  if (!node.m_requires_grad) {
+    label += " | frozen";
+  }
   label += "}";
   return fmt::format("{} [label=\"{}\", shape={}]", node.m_id, label,
                      node.m_shape);
@@ -115,7 +118,7 @@ template <typename T> struct graph {
     std::unordered_set<engine::Value<T> *> visited;
     std::function<void(engine::Value<T> *)> build_topological;
     build_topological = [&](engine::Value<T> *s) -> void {
-      if (!s || visited.contains(s)) {
+      if (!s || visited.contains(s) || !s->m_requires_grad) {
         return;
       }
       visited.insert(s);
@@ -153,6 +156,12 @@ public:
     this->m_id = id;
     return *this;
   }
+
+  auto set_requires_grad(bool v) -> Value & {
+    m_requires_grad = v;
+    return *this;
+  }
+  auto requires_grad() const -> bool { return m_requires_grad; }
 
   auto exp() -> Value {
     auto value = std::exp(m_value);
@@ -204,57 +213,55 @@ public:
     switch (m_op) {
     case op_t::add: {
 
-      if (m_left) {
+      if (m_left && m_left->m_requires_grad) {
         m_left->m_grad += 1.0 * m_grad;
       }
-      if (m_right) {
+      if (m_right && m_right->m_requires_grad) {
         m_right->m_grad += 1.0 * m_grad;
       }
     }
       return;
     case op_t::sub: {
-      if (m_left) {
+      if (m_left && m_left->m_requires_grad) {
         m_left->m_grad += 1.0 * m_grad;
       }
-      if (m_right) {
+      if (m_right && m_right->m_requires_grad) {
         m_right->m_grad += -1.0 * m_grad;
       }
     }
       return;
     case op_t::mul: {
-      if (m_left) {
+      if (m_left && m_left->m_requires_grad) {
         m_left->m_grad += m_right->m_value * m_grad;
       }
-      if (m_right) {
+      if (m_right && m_right->m_requires_grad) {
         m_right->m_grad += m_left->m_value * m_grad;
       }
     }
       return;
     case op_t::div: {
-      // d(a/b)/da = 1/b,  d(a/b)/db = -a/b^2
-      if (m_left) {
+      if (m_left && m_left->m_requires_grad) {
         m_left->m_grad += (1.0 / m_right->m_value) * m_grad;
       }
-      if (m_right) {
+      if (m_right && m_right->m_requires_grad) {
         m_right->m_grad += (-m_value / m_right->m_value) * m_grad;
       }
     }
       return;
     case op_t::tanh: {
-      if (m_left) {
+      if (m_left && m_left->m_requires_grad) {
         m_left->m_grad += (1 - m_value * m_value) * m_grad;
       }
     }
       return;
     case op_t::exp: {
-      if (m_left) {
+      if (m_left && m_left->m_requires_grad) {
         m_left->m_grad += m_value * m_grad;
       }
     }
       return;
     case op_t::pow: {
-      // d(base^exp)/d(base) = exp * base^(exp-1)
-      if (m_left) {
+      if (m_left && m_left->m_requires_grad) {
         T exponent = m_op_params[0];
         m_left->m_grad +=
             exponent * std::pow(m_left->m_value, exponent - 1) * m_grad;
@@ -276,6 +283,7 @@ public:
   op_t m_op{};
   Value<T> *m_left = nullptr;
   Value<T> *m_right = nullptr;
+  bool m_requires_grad = true;
   T m_op_params[k_max_op_params]{}; // per-op parameters (pow: exponent,
                                     // leaky_relu: slope, etc.)
 };

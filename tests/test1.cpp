@@ -20,11 +20,12 @@ rankdir=TB;
         fmt::format("{}\n{}\n{}", prefix_str, graph.display(), suffix_str);
 
     {
-      std::ofstream dot_file(file_name);
+      const std::string full_file_name = "doc/pictures/" + file_name;
+      std::ofstream dot_file(full_file_name);
       REQUIRE(dot_file.is_open());
       dot_file << dot_str;
       dot_file.close();
-      fmt::println("Graph written to {}", file_name);
+      fmt::println("Graph written to {}", full_file_name);
     }
   };
 
@@ -235,8 +236,8 @@ rankdir=TB;
     //  dv/da = 3*(a*b)^2 * b,  dv/db = 3*(a*b)^2 * a
     auto a = engine::Value<float>(2.F, "a");
     auto b = engine::Value<float>(3.F, "b");
-    auto prod = (a * b).with_id("prod"); // 6
-    auto v = prod.pow(3.0F).with_id("v");  // 216
+    auto prod = (a * b).with_id("prod");  // 6
+    auto v = prod.pow(3.0F).with_id("v"); // 216
     engine::graph<float> g(&v);
     g.back_propagate();
     REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
@@ -277,6 +278,71 @@ rankdir=TB;
     // Gradient w.r.t x must match
     // d(tanh(x))/dx = 1 - tanh(x)^2
     REQUIRE_THAT(x_builtin.m_grad, WithinAbs(x_manual.m_grad, 1e-6));
+  }
+
+  SECTION("requires_grad = false stops gradient") {
+    //  c = a * b,  b set to requires_grad=false
+    //  dc/da = b (grad flows),  dc/db = a (grad blocked)
+    auto a = engine::Value<float>(4.F, "a");
+    auto b = engine::Value<float>(3.F, "b");
+    b.set_requires_grad(false);
+    REQUIRE_FALSE(b.requires_grad());
+    REQUIRE(a.requires_grad());
+
+    auto c = (a * b).with_id("c"); // 12
+    engine::graph<float> g(&c);
+    g.back_propagate();
+    REQUIRE_THAT(a.m_grad, WithinAbs(3.0F, 1e-6)); // dc/da = b = 3
+    REQUIRE(b.m_grad == 0.0F);                     // gradient blocked
+  }
+
+  SECTION("frozen constant in deep chain") {
+    //  v = (a * frozen_b) + c
+    //  dv/da = frozen_b, dv/dc = 1
+    //  frozen_b gets no gradient
+    auto a = engine::Value<float>(2.F, "a");
+    auto frozen_b = engine::Value<float>(5.F, "b");
+    frozen_b.set_requires_grad(false);
+    auto c = engine::Value<float>(1.F, "c");
+
+    auto prod = (a * frozen_b).with_id("prod"); // 10
+    auto v = (prod + c).with_id("v");           // 11
+    engine::graph<float> g(&v);
+    g.back_propagate();
+
+    REQUIRE_THAT(a.m_grad, WithinAbs(5.0F, 1e-6));    // dv/da = frozen_b = 5
+    REQUIRE(frozen_b.m_grad == 0.0F);                 // blocked
+    REQUIRE_THAT(c.m_grad, WithinAbs(1.0F, 1e-6));    // dv/dc = 1
+    REQUIRE_THAT(prod.m_grad, WithinAbs(1.0F, 1e-6)); // dv/d(prod) = 1
+  }
+
+  SECTION("frozen intermediate node stops gradient to its children") {
+    //  v = (a*b + c) * d,  frozen the (a*b + c) sub-expression
+    //  dv/d(abc) should be blocked → a,b,c,ab get no gradient
+    //  dv/dd = abc.m_value should still flow normally
+    auto a = engine::Value<float>(2.F, "a");
+    auto b = engine::Value<float>(3.F, "b");
+    auto c_var = engine::Value<float>(1.F, "c");
+    auto d = engine::Value<float>(4.F, "d");
+
+    auto ab = (a * b).with_id("ab");        // 6
+    auto abc = (ab + c_var).with_id("abc"); // 7
+    abc.set_requires_grad(false);
+    auto v = (abc * d).with_id("v"); // 28
+
+    engine::graph<float> g(&v);
+    g.back_propagate();
+    print_dot(g, "graph_requires_grad.dot");
+
+    // d receives gradient: dv/dd = abc.m_value = 7
+    REQUIRE_THAT(d.m_grad, WithinAbs(7.0F, 1e-6));
+
+    // abc and everything below it gets nothing
+    REQUIRE(abc.m_grad == 0.0F);
+    REQUIRE(ab.m_grad == 0.0F);
+    REQUIRE(a.m_grad == 0.0F);
+    REQUIRE(b.m_grad == 0.0F);
+    REQUIRE(c_var.m_grad == 0.0F);
   }
 }
 
