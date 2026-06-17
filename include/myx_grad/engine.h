@@ -7,6 +7,7 @@
 #include <fmt/format.h>
 #include <functional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace engine {
@@ -110,20 +111,22 @@ template <typename T> struct graph {
   }
 
   auto back_propagate() {
-    std::vector<engine::Value<T> *> v;
-    std::function<void(engine::Value<T> *)> build_tokological;
-    build_tokological = [&](engine::Value<T> *s) -> void {
-      if (!s) {
+    std::vector<engine::Value<T> *> topo;
+    std::unordered_set<engine::Value<T> *> visited;
+    std::function<void(engine::Value<T> *)> build_topological;
+    build_topological = [&](engine::Value<T> *s) -> void {
+      if (!s || visited.contains(s)) {
         return;
       }
-      build_tokological(s->m_left);
-      build_tokological(s->m_right);
-      v.push_back(s);
+      visited.insert(s);
+      build_topological(s->m_left);
+      build_topological(s->m_right);
+      topo.push_back(s);
     };
     // set root gradient to 1.0
     m_root->m_grad = 1.0;
-    build_tokological(m_root);
-    for (auto it = v.rbegin(); it != v.rend(); ++it) {
+    build_topological(m_root);
+    for (auto it = topo.rbegin(); it != topo.rend(); ++it) {
       (*it)->back_propagate();
     }
   }

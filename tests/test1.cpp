@@ -247,6 +247,37 @@ rankdir=TB;
     // b grad: 108 * a = 108 * 2 = 216
     REQUIRE_THAT(b.m_grad, WithinAbs(216.0F, 1e-6));
   }
+
+  SECTION("tanh shortcut vs manual exp-based implementation") {
+    // Compare builtin tanh() against manual composition:
+    //   tanh(x) = (exp(2x) - 1) / (exp(2x) + 1)
+    // Both forward value and backward gradient must match.
+
+    // --- builtin tanh ---
+    auto x_builtin = engine::Value<float>(0.5F, "x");
+    auto builtin = x_builtin.tanh().with_id("builtin");
+    engine::graph<float> g_builtin(&builtin);
+    g_builtin.back_propagate();
+
+    // --- manual tanh via exp ---
+    auto x_manual = engine::Value<float>(0.5F, "x");
+    auto two = engine::Value<float>(2.F);
+    auto one = engine::Value<float>(1.F);
+    auto two_x = (x_manual * two).with_id("2x");
+    auto exp2x = two_x.exp().with_id("exp2x");
+    auto numerator = (exp2x - one).with_id("num");
+    auto denominator = (exp2x + one).with_id("den");
+    auto manual = (numerator / denominator).with_id("manual");
+    engine::graph<float> g_manual(&manual);
+    g_manual.back_propagate();
+
+    // Forward values must match
+    REQUIRE_THAT(builtin.m_value, WithinAbs(manual.m_value, 1e-6));
+
+    // Gradient w.r.t x must match
+    // d(tanh(x))/dx = 1 - tanh(x)^2
+    REQUIRE_THAT(x_builtin.m_grad, WithinAbs(x_manual.m_grad, 1e-6));
+  }
 }
 
 // NOLINTEND(*-magic-numbers, *-identifier-length, *-avoid-do-while)
