@@ -47,8 +47,10 @@ inline auto to_string(op_t o) -> std::string {
 
 template <typename T> struct node {
   static inline int count = 0;
-  explicit node(std::string label, std::string shape = "box")
-      : m_label(std::move(label)), m_id("node_" + std::to_string(count)),
+  explicit node(std::string label, std::string id = "",
+                std::string shape = "box")
+      : m_label(std::move(label)),
+        m_id(id.empty() ? "node_" + std::to_string(count) : id),
         m_shape(std::move(shape)) {
     ++count;
   }
@@ -114,34 +116,47 @@ template <typename T> struct graph {
 template <typename T> class scalar : public node<T> {
 public:
   static auto label(T val) -> std::string {
-    return "scalar[" + std::to_string(val) + "]";
+    if constexpr (std::is_floating_point_v<T>) {
+      return fmt::format("s[{:.3f}]", val);
+    } else {
+      return fmt::format("s[{}]", val);
+    }
   }
-  scalar(T val, float_t grad, op_t op, scalar<T> *left, scalar<T> *right)
-      : node<T>(label(val)), m_value(val), m_op(op), m_grad(grad), m_left(left),
-        m_right(right) {}
-  explicit scalar(T val) : scalar(val, 0.0, op_t::nop, nullptr, nullptr) {}
+  scalar(std::string id, T val, float_t grad, op_t op, scalar<T> *left,
+         scalar<T> *right)
+      : node<T>(label(val), id), m_value(val), m_op(op), m_grad(grad),
+        m_left(left), m_right(right) {}
+
+  explicit scalar(T val) : scalar("", val, 0.0, op_t::nop, nullptr, nullptr) {}
+
+  scalar(T val, std::string id)
+      : scalar(id, val, 0.0, op_t::nop, nullptr, nullptr) {}
 
   auto value() const -> T { return m_value; }
+  auto with_id(std::string id) -> scalar & {
+    this->m_id = id;
+    return *this;
+  }
 
   auto operator+(this scalar &self, scalar &other) -> scalar {
     auto res =
-        scalar(self.m_value + other.m_value, 0.0, op_t::add, &self, &other);
+        scalar("", self.m_value + other.m_value, 0.0, op_t::add, &self, &other);
     return res;
   }
   auto operator-(this scalar &self, scalar &other) -> scalar {
     auto res =
-        scalar(self.m_value - other.m_value, 0.0, op_t::sub, &self, &other);
+        scalar("", self.m_value - other.m_value, 0.0, op_t::sub, &self, &other);
     return res;
   }
   auto operator*(this scalar &self, scalar &other) -> scalar {
     auto res =
-        scalar(self.m_value * other.m_value, 0.0, op_t::mul, &self, &other);
+        scalar("", self.m_value * other.m_value, 0.0, op_t::mul, &self, &other);
     return res;
   }
   auto operator/(this scalar &self, scalar &other) -> scalar {
-    std::abort();
+    fmt::print("Division operation not implemented\n");
     auto res =
-        scalar(self.m_value / other.m_value, 0.0, op_t::div, &self, &other);
+        scalar("", self.m_value / other.m_value, 0.0, op_t::div, &self, &other);
     return res;
   }
 
@@ -176,9 +191,12 @@ public:
       }
       return;
     case op_t::div:
-      std::abort();
+      fmt::print("Division operation not implemented\n");
+      return;
+    case op_t::nop:
       return;
     default:
+      fmt::print("Unhandled operation\n");
       std::abort();
       return;
     }

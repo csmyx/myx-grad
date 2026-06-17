@@ -1,0 +1,10 @@
+digraph ComputeGraph {
+rankdir=TB;
+
+n2 [label="id: n2 | value: s[6.000] | grad: 1 | op: + ", shape=box]
+n1 [label="id: n1 | value: s[3.000] | grad: 2 | op: <nop> ", shape=box]
+n1 [label="id: n1 | value: s[3.000] | grad: 2 | op: <nop> ", shape=box]
+n1 -> n2;
+n1 -> n2;
+
+}

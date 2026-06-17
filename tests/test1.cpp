@@ -1,3 +1,4 @@
+#include <catch2/catch_all.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <fmt/core.h>
 #include <fstream>
@@ -19,7 +20,7 @@ TEST_CASE("test value", "[engine]") {
   auto print_dot = [](engine::scalar<float> *root,
                       const std::string &file_name) {
     const std::string prefix_str = R"(digraph ComputeGraph {
-rankdir=LR;
+rankdir=TB;
 )";
     const std::string suffix_str = "}\n";
     engine::graph<float> g(root);
@@ -45,11 +46,17 @@ rankdir=LR;
   }
 
   {
-    auto val1 = engine::scalar<float>(2.F);
-    auto val2 = engine::scalar<float>(3.F);
-    auto val3 = val1 + val2;
-    auto val4 = engine::scalar<float>(4.F);
-    auto val5 = val3 * val4;
+    auto val1 = engine::scalar<float>(2.F, "n1");
+    auto val2 = engine::scalar<float>(3.F, "n2");
+    auto val3 = (val1 + val2).with_id("n3");
+    auto val4 = engine::scalar<float>(4.F, "n4");
+    auto val5 = (val3 * val4).with_id("n5");
     print_dot(&val5, "graph2.dot");
+  }
+  { // test use the same value as input multiple times
+    auto val1 = engine::scalar<float>(3.F, "n1");
+    auto val2 = (val1 + val1).with_id("n2");
+    print_dot(&val2, "graph3.dot");
+    REQUIRE(val2.m_grad == 2.0F);
   }
 }

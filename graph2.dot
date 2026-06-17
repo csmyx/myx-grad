@@ -1,14 +1,14 @@
 digraph ComputeGraph {
-rankdir=LR;
+rankdir=TB;
 
-node_7 [label="id: node_7 | value: scalar[20.000000] | grad: 0 | op: * ", shape=box]
-node_6 [label="id: node_6 | value: scalar[4.000000] | grad: 0 | op: <nop> ", shape=box]
-node_5 [label="id: node_5 | value: scalar[5.000000] | grad: 0 | op: + ", shape=box]
-node_4 [label="id: node_4 | value: scalar[3.000000] | grad: 0 | op: <nop> ", shape=box]
-node_3 [label="id: node_3 | value: scalar[2.000000] | grad: 0 | op: <nop> ", shape=box]
-node_5 -> node_7;
-node_6 -> node_7;
-node_3 -> node_5;
-node_4 -> node_5;
+n5 [label="id: n5 | value: s[20.000] | grad: 1 | op: * ", shape=box]
+n4 [label="id: n4 | value: s[4.000] | grad: 5 | op: <nop> ", shape=box]
+n3 [label="id: n3 | value: s[5.000] | grad: 4 | op: + ", shape=box]
+n2 [label="id: n2 | value: s[3.000] | grad: 4 | op: <nop> ", shape=box]
+n1 [label="id: n1 | value: s[2.000] | grad: 4 | op: <nop> ", shape=box]
+n3 -> n5;
+n4 -> n5;
+n1 -> n3;
+n2 -> n3;
 
 }
