@@ -95,9 +95,11 @@ template <typename T>
 class Graph {
 public:
     Graph() = default;
+    ~Graph() = default;
     Graph(const Graph &) = delete;
     auto operator=(const Graph &) -> Graph & = delete;
-    ~Graph() = default;
+    Graph(Graph &&) = default;
+    auto operator=(Graph &&) -> Graph & = default;
 
 private:
     util::Arena arena_;
@@ -118,29 +120,25 @@ public:
     }
 
     auto add(Value<T> &left, Value<T> &right) -> Value<T> & {
-        assert(left.graph_ == this);
-        assert(right.graph_ == this);
+        assert(left.graph_ == this && right.graph_ == this);
         auto *node = alloc_value("", left.value_ + right.value_, 0.0, op_t::add, &left, &right, this);
         return *node;
     }
 
     auto sub(Value<T> &left, Value<T> &right) -> Value<T> & {
-        assert(left.graph_ == this);
-        assert(right.graph_ == this);
+        assert(left.graph_ == this && right.graph_ == this);
         auto *node = alloc_value("", left.value_ - right.value_, 0.0, op_t::sub, &left, &right, this);
         return *node;
     }
 
     auto mul(Value<T> &left, Value<T> &right) -> Value<T> & {
-        assert(left.graph_ == this);
-        assert(right.graph_ == this);
+        assert(left.graph_ == this && right.graph_ == this);
         auto *node = alloc_value("", left.value_ * right.value_, 0.0, op_t::mul, &left, &right, this);
         return *node;
     }
 
     auto div(Value<T> &left, Value<T> &right) -> Value<T> & {
-        assert(left.graph_ == this);
-        assert(right.graph_ == this);
+        assert(left.graph_ == this && right.graph_ == this);
         auto *node = alloc_value("", left.value_ / right.value_, 0.0, op_t::div, &left, &right, this);
         return *node;
     }
@@ -219,33 +217,12 @@ public:
 };
 
 template <typename T>
-auto operator+(Value<T> &left, Value<T> &right) -> Value<T> & {
-    assert(left.graph_ == right.graph_);
-    return left.graph_->add(left, right);
-}
-
-template <typename T>
-auto operator-(Value<T> &left, Value<T> &right) -> Value<T> & {
-    assert(left.graph_ == right.graph_);
-    return left.graph_->sub(left, right);
-}
-
-template <typename T>
-auto operator*(Value<T> &left, Value<T> &right) -> Value<T> & {
-    assert(left.graph_ == right.graph_);
-    return left.graph_->mul(left, right);
-}
-
-template <typename T>
-auto operator/(Value<T> &left, Value<T> &right) -> Value<T> & {
-    assert(left.graph_ == right.graph_);
-    return left.graph_->div(left, right);
-}
-
-template <typename T>
 class Value : public Node<T> {
+private:
     friend class Graph<T>;
+    static constexpr std::size_t k_max_op_params = 4;
 
+    // Value can only be constructed from Graph.
     Value(std::string id, T val, float_t grad, op_t op, Value<T> *left, Value<T> *right, Graph<T> *graph)
         : Node<T>(id), value_(val), grad_(grad), op_(op), left_(left), right_(right), graph_(graph) {}
 
@@ -256,8 +233,17 @@ class Value : public Node<T> {
     Value(T val, std::string id) : Value(id, val, 0.0, op_t::nop, nullptr, nullptr, nullptr) {}
 
 public:
-    static constexpr std::size_t k_max_op_params = 4;
+    T value_{};
+    float_t grad_{};  // gradient
+    op_t op_ = op_t::nop;
+    Value<T> *left_ = nullptr;
+    Value<T> *right_ = nullptr;
+    bool requires_grad_ = true;
+    T op_params_[k_max_op_params]{};  // per-op parameters (pow: exponent,
+                                      // leaky_relu: slope, etc.)
+    Graph<T> *graph_ = nullptr;
 
+public:
     // Non-copyable, non-movable: Value holds internal pointers (left_, right_)
     // that would dangle if the object were moved or copied. All Value objects
     // must be created through graph<T> factory methods, which own the arena.
@@ -285,6 +271,41 @@ public:
 
     auto operator==(Value &other) const -> bool {
         return this->id_ == other.id_;
+    }
+
+    auto operator+(Value<T> &other) -> Value<T> & {
+        assert(graph_);
+        return graph_->add(*this, other);
+    }
+
+    auto operator-(Value<T> &other) -> Value<T> & {
+        assert(graph_);
+        return graph_->sub(*this, other);
+    }
+
+    auto operator*(Value<T> &other) -> Value<T> & {
+        assert(graph_);
+        return graph_->mul(*this, other);
+    }
+
+    auto operator/(Value<T> &other) -> Value<T> & {
+        assert(graph_);
+        return graph_->div(*this, other);
+    }
+
+    auto pow(Value &base, T exponent) -> Value & {
+        assert(graph_);
+        return graph_->pow(base, exponent);
+    }
+
+    auto tanh(Value &x) -> Value & {
+        assert(graph_);
+        return graph_->tanh(x);
+    }
+
+    auto exp(Value &x) -> Value & {
+        assert(graph_);
+        return graph_->exp(x);
     }
 
     auto back_propagate() {
@@ -353,17 +374,27 @@ public:
         }
         return;
     }
-
-    T value_{};
-    float_t grad_{};  // gradient
-    op_t op_{};
-    Value<T> *left_ = nullptr;
-    Value<T> *right_ = nullptr;
-    bool requires_grad_ = true;
-    T op_params_[k_max_op_params]{};  // per-op parameters (pow: exponent,
-                                      // leaky_relu: slope, etc.)
-    Graph<T> *graph_ = nullptr;
 };
+
+template <typename T>
+auto operator+(Value<T> &left, Value<T> &right) -> Value<T> & {
+    return left + right;
+}
+
+template <typename T>
+auto operator-(Value<T> &left, Value<T> &right) -> Value<T> & {
+    return left - right;
+}
+
+template <typename T>
+auto operator*(Value<T> &left, Value<T> &right) -> Value<T> & {
+    return left * right;
+}
+
+template <typename T>
+auto operator/(Value<T> &left, Value<T> &right) -> Value<T> & {
+    return left / right;
+}
 
 
 }  // namespace engine

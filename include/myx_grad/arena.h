@@ -11,6 +11,8 @@ public:
     ~Arena();
     Arena(const Arena &) = delete;
     auto operator=(const Arena &) -> Arena & = delete;
+    Arena(Arena &&) = default;
+    auto operator=(Arena &&) -> Arena & = default;
 
     inline auto alloc(size_t size) -> void *;
     inline auto alloc_aligned(size_t size) -> void *;

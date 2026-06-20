@@ -52,11 +52,9 @@ rankdir=TB;
         engine::Graph<float> g;
         auto &val1 = g.leaf(2.F, "n1");
         auto &val2 = g.leaf(3.F, "n2");
-        auto &val3 = val1 + val2;
-        val3.with_id("n3");
+        auto &val3 = (val1 + val2).with_id("n3");
         auto &val4 = g.leaf(4.F, "n4");
-        auto &val5 = val3 * val4;
-        val5.with_id("n5");
+        auto &val5 = (val3 * val4).with_id("n5");
         g.back_propagate(val5);
         print_dot(g, val5, "graph2.dot");
         REQUIRE(val5.grad_ == 1.0F);
@@ -69,8 +67,7 @@ rankdir=TB;
     SECTION("shared input value") {
         engine::Graph<float> g;
         auto &val1 = g.leaf(3.F, "n1");
-        auto &val2 = val1 + val1;
-        val2.with_id("n2");
+        auto &val2 = (val1 + val1).with_id("n2");
         g.back_propagate(val2);
         print_dot(g, val2, "graph3.dot");
         REQUIRE(val1.grad_ == 2.0F);
@@ -83,16 +80,11 @@ rankdir=TB;
         auto &w1 = g.leaf(-3.F, "w1");
         auto &w2 = g.leaf(1.F, "w2");
         auto &b = g.leaf(6.8813735870195432F, "b");
-        auto &wx1 = x1 * w1;
-        wx1.with_id("wx1");
-        auto &wx2 = x2 * w2;
-        wx2.with_id("wx2");
-        auto &wx = wx1 + wx2;
-        wx.with_id("wx");
-        auto &n = wx + b;
-        n.with_id("n");
-        auto &o = g.tanh(n);
-        o.with_id("o");
+        auto &wx1 = (x1 * w1).with_id("wx1");
+        auto &wx2 = (x2 * w2).with_id("wx2");
+        auto &wx = (wx1 + wx2).with_id("wx");
+        auto &n = (wx + b).with_id("n");
+        auto &o = g.tanh(n).with_id("o");
         g.back_propagate(o);
         print_dot(g, o, "graph_4.dot");
         REQUIRE_THAT(o.grad_, WithinAbs(1.0F, 1e-6));
@@ -110,8 +102,7 @@ rankdir=TB;
         engine::Graph<float> g;
         auto &a = g.leaf(5.F, "a");
         auto &b = g.leaf(3.F, "b");
-        auto &c = a - b;
-        c.with_id("c");
+        auto &c = (a - b).with_id("c");
         g.back_propagate(c);
         REQUIRE_THAT(c.grad_, WithinAbs(1.0F, 1e-6));
         REQUIRE_THAT(a.grad_, WithinAbs(1.0F, 1e-6));
@@ -125,12 +116,9 @@ rankdir=TB;
         auto &b = g.leaf(3.F, "b");
         auto &c = g.leaf(1.F, "c");
         auto &d = g.leaf(4.F, "d");
-        auto &ab = a * b;
-        ab.with_id("ab");  // 6
-        auto &abc = ab + c;
-        abc.with_id("abc");  // 7
-        auto &v = abc * d;
-        v.with_id("v");  // 28
+        auto &ab = (a * b).with_id("ab");     // 6
+        auto &abc = (ab + c).with_id("abc");  // 7
+        auto &v = (abc * d).with_id("v");     // 28
         g.back_propagate(v);
         REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
         REQUIRE_THAT(abc.grad_, WithinAbs(4.0F, 1e-6));  // d
@@ -147,12 +135,9 @@ rankdir=TB;
         auto &a = g.leaf(2.F, "a");
         auto &b = g.leaf(3.F, "b");
         auto &c = g.leaf(5.F, "c");
-        auto &ab = a * b;
-        ab.with_id("ab");  // 6
-        auto &ac = a * c;
-        ac.with_id("ac");  // 10
-        auto &v = ab + ac;
-        v.with_id("v");  // 16
+        auto &ab = (a * b).with_id("ab");  // 6
+        auto &ac = (a * c).with_id("ac");  // 10
+        auto &v = (ab + ac).with_id("v");  // 16
         g.back_propagate(v);
         REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
         REQUIRE_THAT(ab.grad_, WithinAbs(1.0F, 1e-6));
@@ -166,8 +151,7 @@ rankdir=TB;
     SECTION("subtract same value") {
         engine::Graph<float> g;
         auto &a = g.leaf(7.F, "a");
-        auto &v = a - a;
-        v.with_id("v");
+        auto &v = (a - a).with_id("v");
         g.back_propagate(v);
         REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
         REQUIRE_THAT(a.grad_, WithinAbs(0.0F, 1e-6));
@@ -181,18 +165,12 @@ rankdir=TB;
         engine::Graph<float> g;
         auto &a = g.leaf(1.5F, "a");
         auto &b = g.leaf(0.8F, "b");
-        auto &prod = a * b;
-        prod.with_id("prod");
-        auto &sum_ab = a + b;
-        sum_ab.with_id("sum");
-        auto &th = g.tanh(sum_ab);
-        th.with_id("th");
-        auto &th_plus_a = th + a;
-        th_plus_a.with_id("th_plus_a");
-        auto &v = prod + th_plus_a;
-        v.with_id("v");
-        auto &final_v = v - b;
-        final_v.with_id("final");
+        auto &prod = (a * b).with_id("prod");
+        auto &sum_ab = (a + b).with_id("sum");
+        auto &th = g.tanh(sum_ab).with_id("th");
+        auto &th_plus_a = (th + a).with_id("th_plus_a");
+        auto &v = (prod + th_plus_a).with_id("v");
+        auto &final_v = (v - b).with_id("final");
         g.back_propagate(final_v);
 
         float f0 = compute(1.5F, 0.8F);
@@ -212,8 +190,7 @@ rankdir=TB;
         engine::Graph<float> g;
         auto &a = g.leaf(8.F, "a");
         auto &b = g.leaf(2.F, "b");
-        auto &v = a / b;
-        v.with_id("v");
+        auto &v = (a / b).with_id("v");
         g.back_propagate(v);
         REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
         REQUIRE_THAT(a.grad_, WithinAbs(0.5F, 1e-6));   // 1/2
@@ -224,8 +201,7 @@ rankdir=TB;
         //  d(base^exp)/d(base) = exp * base^(exp-1)
         engine::Graph<float> g;
         auto &a = g.leaf(3.F, "a");
-        auto &v = g.pow(a, 2.0F);
-        v.with_id("v");  // v = a^2 = 9
+        auto &v = g.pow(a, 2.0F).with_id("v");  // v = a^2 = 9
         g.back_propagate(v);
         REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
         REQUIRE_THAT(a.grad_, WithinAbs(6.0F, 1e-6));  // 2*3
@@ -236,10 +212,8 @@ rankdir=TB;
         engine::Graph<float> g;
         auto &a = g.leaf(2.F, "a");
         auto &b = g.leaf(3.F, "b");
-        auto &prod = a * b;
-        prod.with_id("prod");  // 6
-        auto &v = g.pow(prod, 3.0F);
-        v.with_id("v");  // 216
+        auto &prod = (a * b).with_id("prod");      // 6
+        auto &v = g.pow(prod, 3.0F).with_id("v");  // 216
         g.back_propagate(v);
         REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
         // prod grad: 3 * 6^2 = 108
@@ -257,27 +231,19 @@ rankdir=TB;
         // --- builtin tanh ---
         engine::Graph<float> g1;
         auto &x_builtin = g1.leaf(0.5F, "x");
-        auto &builtin = g1.tanh(x_builtin);
-        builtin.with_id("builtin");
+        auto &builtin = g1.tanh(x_builtin).with_id("builtin");
         g1.back_propagate(builtin);
 
         // --- manual tanh via exp ---
         engine::Graph<float> g2;
         auto &x_manual = g2.leaf(0.5F, "x");
-        auto &two = g2.leaf(2.F);
-        two.set_requires_grad(false);
-        auto &one = g2.leaf(1.F);
-        one.set_requires_grad(false);
-        auto &two_x = x_manual * two;
-        two_x.with_id("2x");
-        auto &exp2x = g2.exp(two_x);
-        exp2x.with_id("exp2x");
-        auto &numerator = exp2x - one;
-        numerator.with_id("num");
-        auto &denominator = exp2x + one;
-        denominator.with_id("den");
-        auto &manual = numerator / denominator;
-        manual.with_id("manual");
+        auto &two = g2.leaf(2.F).set_requires_grad(false);
+        auto &one = g2.leaf(1.F).set_requires_grad(false);
+        auto &two_x = (x_manual * two).with_id("2x");
+        auto &exp2x = g2.exp(two_x).with_id("exp2x");
+        auto &numerator = (exp2x - one).with_id("num");
+        auto &denominator = (exp2x + one).with_id("den");
+        auto &manual = (numerator / denominator).with_id("manual");
         g2.back_propagate(manual);
 
         // Forward values must match
@@ -290,13 +256,11 @@ rankdir=TB;
     SECTION("requires_grad = false stops gradient") {
         engine::Graph<float> g;
         auto &a = g.leaf(4.F, "a");
-        auto &b = g.leaf(3.F, "b");
-        b.set_requires_grad(false);
+        auto &b = g.leaf(3.F, "b").set_requires_grad(false);
         REQUIRE_FALSE(b.requires_grad());
         REQUIRE(a.requires_grad());
 
-        auto &c = a * b;
-        c.with_id("c");  // 12
+        auto &c = (a * b).with_id("c");  // 12
         g.back_propagate(c);
         REQUIRE_THAT(a.grad_, WithinAbs(3.0F, 1e-6));  // dc/da = b = 3
         REQUIRE(b.grad_ == 0.0F);                      // gradient blocked
@@ -305,14 +269,11 @@ rankdir=TB;
     SECTION("frozen constant in deep chain") {
         engine::Graph<float> g;
         auto &a = g.leaf(2.F, "a");
-        auto &frozen_b = g.leaf(5.F, "b");
-        frozen_b.set_requires_grad(false);
+        auto &frozen_b = g.leaf(5.F, "b").set_requires_grad(false);
         auto &c = g.leaf(1.F, "c");
 
-        auto &prod = a * frozen_b;
-        prod.with_id("prod");  // 10
-        auto &v = prod + c;
-        v.with_id("v");  // 11
+        auto &prod = (a * frozen_b).with_id("prod");  // 10
+        auto &v = (prod + c).with_id("v");            // 11
         g.back_propagate(v);
 
         REQUIRE_THAT(a.grad_, WithinAbs(5.0F, 1e-6));     // dv/da = frozen_b = 5
@@ -328,13 +289,9 @@ rankdir=TB;
         auto &c_var = g.leaf(1.F, "c");
         auto &d = g.leaf(4.F, "d");
 
-        auto &ab = a * b;
-        ab.with_id("ab");  // 6
-        auto &abc = ab + c_var;
-        abc.with_id("abc");  // 7
-        abc.set_requires_grad(false);
-        auto &v = abc * d;
-        v.with_id("v");  // 28
+        auto &ab = (a * b).with_id("ab");                                  // 6
+        auto &abc = (ab + c_var).with_id("abc").set_requires_grad(false);  // 7
+        auto &v = (abc * d).with_id("v");                                  // 28
 
         g.back_propagate(v);
         print_dot(g, v, "graph_requires_grad.dot");

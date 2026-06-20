@@ -15,6 +15,7 @@ Checks: "*,\
   -llvmlibc-*,\
   -modernize-use-nodiscard,\
   -misc-non-private-member-variables-in-classes,\
+  -readability-redundant-access-specifiers,\
   -cppcoreguidelines-owning-memory"
 WarningsAsErrors: ''
 CheckOptions:
@@ -46,8 +47,6 @@ CheckOptions:
   - key: 'readability-inconsistent-declaration-parameter-name.Strict'
     value: 'true'
   - key: 'readability-qualified-auto.AddConstToQualified'
-    value: 'true'
-  - key: 'readability-redundant-access-specifiers.CheckFirstDeclaration'
     value: 'true'
 # These seem to be the most common identifier styles
   - key: 'readability-identifier-naming.AbstractClassCase'
