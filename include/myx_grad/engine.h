@@ -107,7 +107,7 @@ private:
 
     template <typename... Args>
     auto alloc_value(Args &&...args) -> Value<T> * {
-        void *value_ptr = arena_.alloc(sizeof(Value<T>));
+        void *value_ptr = arena_.alloc<Value<T>>();
         auto *value = new (value_ptr) Value<T>(std::forward<Args>(args)...);
         nodes_.push_back(value);
         return value;

@@ -1,4 +1,5 @@
 #include <fmt/core.h>
+#include <myx_grad/arena.h>
 #include <myx_grad/engine.h>
 
 #include <catch2/catch_all.hpp>
@@ -173,7 +174,6 @@ rankdir=TB;
         auto &final_v = (v - b).with_id("final");
         g.back_propagate(final_v);
 
-        float f0 = compute(1.5F, 0.8F);
         float f_ap = compute(1.5F + h, 0.8F);
         float f_am = compute(1.5F - h, 0.8F);
         float f_bp = compute(1.5F, 0.8F + h);
@@ -309,3 +309,102 @@ rankdir=TB;
 }
 
 // NOLINTEND(*-magic-numbers, *-identifier-length, *-avoid-do-while)
+
+// NOLINTBEGIN(*-magic-numbers, *-identifier-length)
+
+TEST_CASE("arena allocation", "[arena]") {
+    SECTION("alloc returns non-null for small size") {
+        util::Arena arena;
+        void *ptr = arena.alloc(16, alignof(std::max_align_t));
+        REQUIRE(ptr != nullptr);
+        // Write to verify the memory is usable
+        auto *iptr = static_cast<int *>(ptr);
+        *iptr = 42;
+        REQUIRE(*iptr == 42);
+    }
+
+    SECTION("alloc respects alignment") {
+        util::Arena arena;
+        constexpr std::size_t align = alignof(std::max_align_t);  // max guaranteed by new[]
+        void *ptr = arena.alloc(8, align);
+        REQUIRE(ptr != nullptr);
+        auto addr = reinterpret_cast<std::uintptr_t>(ptr);
+        REQUIRE(addr % align == 0);
+    }
+
+    SECTION("alloc_unaligned returns non-null") {
+        util::Arena arena;
+        void *ptr = arena.alloc_unaligned(32);
+        REQUIRE(ptr != nullptr);
+        std::memset(ptr, 0xAB, 32);
+        auto *cptr = static_cast<unsigned char *>(ptr);
+        REQUIRE(cptr[0] == 0xAB);
+        REQUIRE(cptr[31] == 0xAB);
+    }
+
+    SECTION("multiple small allocations are contiguous within a chunk") {
+        util::Arena arena;
+        void *p1 = arena.alloc_unaligned(8);
+        void *p2 = arena.alloc_unaligned(8);
+        REQUIRE(p1 != nullptr);
+        REQUIRE(p2 != nullptr);
+        REQUIRE(p2 == static_cast<char *>(p1) + 8);
+    }
+
+    SECTION("alloc handles big allocation (> chunk_size/4)") {
+        util::Arena arena;
+        constexpr std::size_t big = 2048;  // exceeds chunk_size/4 (1024)
+        void *ptr = arena.alloc_unaligned(big);
+        REQUIRE(ptr != nullptr);
+        std::memset(ptr, 0xCD, big);
+        auto *cptr = static_cast<unsigned char *>(ptr);
+        REQUIRE(cptr[0] == 0xCD);
+        REQUIRE(cptr[big - 1] == 0xCD);
+    }
+
+    SECTION("templated alloc<T> returns properly aligned storage") {
+        util::Arena arena;
+        void *ptr = arena.alloc<double>();
+        REQUIRE(ptr != nullptr);
+        auto addr = reinterpret_cast<std::uintptr_t>(ptr);
+        REQUIRE(addr % alignof(double) == 0);
+        auto *dptr = static_cast<double *>(ptr);
+        *dptr = 3.14;
+        REQUIRE(*dptr == 3.14);
+    }
+
+    SECTION("many allocations exhaust and allocate new chunks") {
+        util::Arena arena;
+        // Allocate enough to exceed a single chunk (4096 bytes)
+        std::vector<void *> ptrs;
+        for (int i = 0; i < 512; ++i) {
+            void *ptr = arena.alloc_unaligned(16);
+            REQUIRE(ptr != nullptr);
+            ptrs.push_back(ptr);
+        }
+        // All pointers should be unique
+        std::unordered_set<void *> seen(ptrs.begin(), ptrs.end());
+        REQUIRE(seen.size() == ptrs.size());
+    }
+
+    SECTION("arena destructor frees without crashing") {
+        util::Arena *arena = new util::Arena();
+        for (int i = 0; i < 100; ++i) {
+            [[maybe_unused]] void *ptr = arena->alloc_unaligned(64);
+        }
+        delete arena;  // should not crash
+    }
+
+    SECTION("arena is movable") {
+        util::Arena arena;
+        void *ptr1 = arena.alloc_unaligned(16);
+        util::Arena moved = std::move(arena);
+        // The moved arena should still own the previously allocated chunk
+        REQUIRE(ptr1 != nullptr);
+        // New allocation from moved arena should work
+        void *ptr2 = moved.alloc_unaligned(16);
+        REQUIRE(ptr2 != nullptr);
+    }
+}
+
+// NOLINTEND(*-magic-numbers, *-identifier-length)
