@@ -1,1 +1,2 @@
-build-debug*.dot
+build-debug
+*.dot

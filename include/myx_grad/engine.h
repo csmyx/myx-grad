@@ -74,7 +74,7 @@ template <typename T> struct Node {
 };
 
 template <typename T>
-inline auto to_string(engine::Value<T> node) -> std::string {
+inline auto to_string(const engine::Value<T> &node) -> std::string {
   std::string label = fmt::format("{{id: {} | value: {} | grad: {} | op: {}",
                                   node.m_id, format_v(node.m_value),
                                   format_v(node.m_grad), to_string(node.m_op));
@@ -225,6 +225,14 @@ public:
   Value(T val, std::string id)
       : Value(id, val, 0.0, op_t::nop, nullptr, nullptr) {}
 
+  // Non-copyable, non-movable: Value holds internal pointers (m_left, m_right)
+  // that would dangle if the object were moved or copied. All Value objects
+  // must be created through graph<T> factory methods, which own the arena.
+  Value(const Value &) = delete;
+  Value &operator=(const Value &) = delete;
+  Value(Value &&) = delete;
+  Value &operator=(Value &&) = delete;
+
   auto value() const -> T { return m_value; }
   auto with_id(std::string id) -> Value & {
     this->m_id = id;
@@ -236,51 +244,6 @@ public:
     return *this;
   }
   auto requires_grad() const -> bool { return m_requires_grad; }
-
-  auto exp() -> Value {
-    auto value = std::exp(m_value);
-    auto res = Value("", value, 0.0, op_t::exp, this, nullptr);
-    return res;
-  }
-
-  auto tanh() -> Value {
-    auto exp2x = std::exp(2 * m_value);
-    auto value = (exp2x - 1) / (exp2x + 1);
-    auto res = Value("", value, 0.0, op_t::tanh, this, nullptr);
-    return res;
-  }
-
-  // ---- convenience operators (prefer graph::add/mul/etc for ownership safety)
-  // ----
-
-  auto operator+(this Value &self, Value &other) -> Value {
-    auto res =
-        Value("", self.m_value + other.m_value, 0.0, op_t::add, &self, &other);
-    return res;
-  }
-  auto operator-(this Value &self, Value &other) -> Value {
-    auto res =
-        Value("", self.m_value - other.m_value, 0.0, op_t::sub, &self, &other);
-    return res;
-  }
-  auto operator*(this Value &self, Value &other) -> Value {
-    auto res =
-        Value("", self.m_value * other.m_value, 0.0, op_t::mul, &self, &other);
-    return res;
-  }
-  auto operator/(this Value &self, Value &other) -> Value {
-    auto res =
-        Value("", self.m_value / other.m_value, 0.0, op_t::div, &self, &other);
-    return res;
-  }
-  // pow(base, exponent) — exponent stored in m_op_params[0]
-  //  d(base^exp)/d(base) = exp * base^(exp-1)
-  auto pow(T exponent) -> Value {
-    auto res =
-        Value("", std::pow(m_value, exponent), 0.0, op_t::pow, this, nullptr);
-    res.m_op_params[0] = exponent;
-    return res;
-  }
 
   auto operator==(Value &other) const -> bool {
     return this->m_id == other.m_id;
