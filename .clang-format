@@ -15,8 +15,8 @@ ColumnLimit: 120
 MaxEmptyLinesToKeep: 2
 KeepEmptyLinesAtTheStartOfBlocks: false
 
-# 大括号风格（Allman，单独起行，阅读更清晰）
-BreakBeforeBraces: Allman
+# 大括号风格（Attach，跟随在同一行）
+BreakBeforeBraces: Attach
 
 # 命名空间不缩进
 NamespaceIndentation: None
@@ -24,7 +24,7 @@ NamespaceIndentation: None
 # 禁止短语句单行（强制换行，风格统一）
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
-AllowShortLoopsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
 
 # 指针/引用紧贴类型（现代 C++ 主流写法）
 PointerAlignment: Right
@@ -34,7 +34,6 @@ SpaceBeforeParens: ControlStatements
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
 SpacesInAngles: false
-SpaceAfterComma: true
 
 # 注释
 AlignTrailingComments: true
