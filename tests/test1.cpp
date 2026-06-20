@@ -60,11 +60,11 @@ rankdir=TB;
     val5.with_id("n5");
     g.back_propagate(val5);
     print_dot(g, val5, "graph2.dot");
-    REQUIRE(val5.m_grad == 1.0F);
-    REQUIRE(val4.m_grad == 5.0F);
-    REQUIRE(val3.m_grad == 4.0F);
-    REQUIRE(val2.m_grad == 4.0F);
-    REQUIRE(val1.m_grad == 4.0F);
+    REQUIRE(val5.grad_ == 1.0F);
+    REQUIRE(val4.grad_ == 5.0F);
+    REQUIRE(val3.grad_ == 4.0F);
+    REQUIRE(val2.grad_ == 4.0F);
+    REQUIRE(val1.grad_ == 4.0F);
   }
 
   SECTION("shared input value") {
@@ -74,7 +74,7 @@ rankdir=TB;
     val2.with_id("n2");
     g.back_propagate(val2);
     print_dot(g, val2, "graph3.dot");
-    REQUIRE(val1.m_grad == 2.0F);
+    REQUIRE(val1.grad_ == 2.0F);
   }
 
   SECTION("tanh activation backpropagation") {
@@ -96,14 +96,14 @@ rankdir=TB;
     o.with_id("o");
     g.back_propagate(o);
     print_dot(g, o, "graph_4.dot");
-    REQUIRE_THAT(o.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(n.m_grad, WithinAbs(0.5F, 1e-6));
-    REQUIRE_THAT(wx1.m_grad, WithinAbs(0.5F, 1e-6));
-    REQUIRE_THAT(wx2.m_grad, WithinAbs(0.5F, 1e-6));
-    REQUIRE_THAT(w1.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(w2.m_grad, WithinAbs(0.0F, 1e-6));
-    REQUIRE_THAT(x1.m_grad, WithinAbs(-1.5F, 1e-6));
-    REQUIRE_THAT(x2.m_grad, WithinAbs(0.5F, 1e-6));
+    REQUIRE_THAT(o.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(n.grad_, WithinAbs(0.5F, 1e-6));
+    REQUIRE_THAT(wx1.grad_, WithinAbs(0.5F, 1e-6));
+    REQUIRE_THAT(wx2.grad_, WithinAbs(0.5F, 1e-6));
+    REQUIRE_THAT(w1.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(w2.grad_, WithinAbs(0.0F, 1e-6));
+    REQUIRE_THAT(x1.grad_, WithinAbs(-1.5F, 1e-6));
+    REQUIRE_THAT(x2.grad_, WithinAbs(0.5F, 1e-6));
   }
 
   SECTION("subtraction backpropagation") {
@@ -114,9 +114,9 @@ rankdir=TB;
     auto &c = g.sub(a, b);
     c.with_id("c");
     g.back_propagate(c);
-    REQUIRE_THAT(c.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(a.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(b.m_grad, WithinAbs(-1.0F, 1e-6));
+    REQUIRE_THAT(c.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(a.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(b.grad_, WithinAbs(-1.0F, 1e-6));
   }
 
   SECTION("deeper chain backpropagation") {
@@ -133,13 +133,13 @@ rankdir=TB;
     auto &v = g.mul(abc, d);
     v.with_id("v"); // 28
     g.back_propagate(v);
-    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(abc.m_grad, WithinAbs(4.0F, 1e-6)); // d
-    REQUIRE_THAT(d.m_grad, WithinAbs(7.0F, 1e-6));   // a*b+c
-    REQUIRE_THAT(ab.m_grad, WithinAbs(4.0F, 1e-6));  // d * 1
-    REQUIRE_THAT(c.m_grad, WithinAbs(4.0F, 1e-6));   // d * 1
-    REQUIRE_THAT(a.m_grad, WithinAbs(12.0F, 1e-6));  // d * b
-    REQUIRE_THAT(b.m_grad, WithinAbs(8.0F, 1e-6));   // d * a
+    REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(abc.grad_, WithinAbs(4.0F, 1e-6)); // d
+    REQUIRE_THAT(d.grad_, WithinAbs(7.0F, 1e-6));   // a*b+c
+    REQUIRE_THAT(ab.grad_, WithinAbs(4.0F, 1e-6));  // d * 1
+    REQUIRE_THAT(c.grad_, WithinAbs(4.0F, 1e-6));   // d * 1
+    REQUIRE_THAT(a.grad_, WithinAbs(12.0F, 1e-6));  // d * b
+    REQUIRE_THAT(b.grad_, WithinAbs(8.0F, 1e-6));   // d * a
   }
 
   SECTION("DAG with shared node") {
@@ -155,13 +155,13 @@ rankdir=TB;
     auto &v = g.add(ab, ac);
     v.with_id("v"); // 16
     g.back_propagate(v);
-    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(ab.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(ac.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(ab.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(ac.grad_, WithinAbs(1.0F, 1e-6));
     // a accumulates gradient from both ab and ac paths: b + c = 3 + 5
-    REQUIRE_THAT(a.m_grad, WithinAbs(8.0F, 1e-6));
-    REQUIRE_THAT(b.m_grad, WithinAbs(2.0F, 1e-6)); // a
-    REQUIRE_THAT(c.m_grad, WithinAbs(2.0F, 1e-6)); // a
+    REQUIRE_THAT(a.grad_, WithinAbs(8.0F, 1e-6));
+    REQUIRE_THAT(b.grad_, WithinAbs(2.0F, 1e-6)); // a
+    REQUIRE_THAT(c.grad_, WithinAbs(2.0F, 1e-6)); // a
   }
 
   SECTION("subtract same value") {
@@ -170,8 +170,8 @@ rankdir=TB;
     auto &v = g.sub(a, a);
     v.with_id("v");
     g.back_propagate(v);
-    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(a.m_grad, WithinAbs(0.0F, 1e-6));
+    REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(a.grad_, WithinAbs(0.0F, 1e-6));
   }
 
   SECTION("numerical gradient check with finite differences") {
@@ -206,8 +206,8 @@ rankdir=TB;
     float num_grad_a = (f_ap - f_am) / (2.0F * h);
     float num_grad_b = (f_bp - f_bm) / (2.0F * h);
 
-    REQUIRE_THAT(a.m_grad, WithinAbs(num_grad_a, 2e-3F));
-    REQUIRE_THAT(b.m_grad, WithinAbs(num_grad_b, 2e-3F));
+    REQUIRE_THAT(a.grad_, WithinAbs(num_grad_a, 2e-3F));
+    REQUIRE_THAT(b.grad_, WithinAbs(num_grad_b, 2e-3F));
   }
 
   SECTION("division backpropagation") {
@@ -218,9 +218,9 @@ rankdir=TB;
     auto &v = g.div(a, b);
     v.with_id("v");
     g.back_propagate(v);
-    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(a.m_grad, WithinAbs(0.5F, 1e-6));  // 1/2
-    REQUIRE_THAT(b.m_grad, WithinAbs(-2.0F, 1e-6)); // -8/4
+    REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(a.grad_, WithinAbs(0.5F, 1e-6));  // 1/2
+    REQUIRE_THAT(b.grad_, WithinAbs(-2.0F, 1e-6)); // -8/4
   }
 
   SECTION("power backpropagation") {
@@ -230,8 +230,8 @@ rankdir=TB;
     auto &v = g.pow(a, 2.0F);
     v.with_id("v"); // v = a^2 = 9
     g.back_propagate(v);
-    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
-    REQUIRE_THAT(a.m_grad, WithinAbs(6.0F, 1e-6)); // 2*3
+    REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(a.grad_, WithinAbs(6.0F, 1e-6)); // 2*3
   }
 
   SECTION("pow in chain backpropagation") {
@@ -244,13 +244,13 @@ rankdir=TB;
     auto &v = g.pow(prod, 3.0F);
     v.with_id("v"); // 216
     g.back_propagate(v);
-    REQUIRE_THAT(v.m_grad, WithinAbs(1.0F, 1e-6));
+    REQUIRE_THAT(v.grad_, WithinAbs(1.0F, 1e-6));
     // prod grad: 3 * 6^2 = 108
-    REQUIRE_THAT(prod.m_grad, WithinAbs(108.0F, 1e-6));
+    REQUIRE_THAT(prod.grad_, WithinAbs(108.0F, 1e-6));
     // a grad: 108 * b = 108 * 3 = 324
-    REQUIRE_THAT(a.m_grad, WithinAbs(324.0F, 1e-6));
+    REQUIRE_THAT(a.grad_, WithinAbs(324.0F, 1e-6));
     // b grad: 108 * a = 108 * 2 = 216
-    REQUIRE_THAT(b.m_grad, WithinAbs(216.0F, 1e-6));
+    REQUIRE_THAT(b.grad_, WithinAbs(216.0F, 1e-6));
   }
 
   SECTION("tanh shortcut vs manual exp-based implementation") {
@@ -284,10 +284,10 @@ rankdir=TB;
     g2.back_propagate(manual);
 
     // Forward values must match
-    REQUIRE_THAT(builtin.m_value, WithinAbs(manual.m_value, 1e-6));
+    REQUIRE_THAT(builtin.value_, WithinAbs(manual.value_, 1e-6));
 
     // Gradient w.r.t x must match
-    REQUIRE_THAT(x_builtin.m_grad, WithinAbs(x_manual.m_grad, 1e-6));
+    REQUIRE_THAT(x_builtin.grad_, WithinAbs(x_manual.grad_, 1e-6));
   }
 
   SECTION("requires_grad = false stops gradient") {
@@ -301,8 +301,8 @@ rankdir=TB;
     auto &c = g.mul(a, b);
     c.with_id("c"); // 12
     g.back_propagate(c);
-    REQUIRE_THAT(a.m_grad, WithinAbs(3.0F, 1e-6)); // dc/da = b = 3
-    REQUIRE(b.m_grad == 0.0F);                     // gradient blocked
+    REQUIRE_THAT(a.grad_, WithinAbs(3.0F, 1e-6)); // dc/da = b = 3
+    REQUIRE(b.grad_ == 0.0F);                     // gradient blocked
   }
 
   SECTION("frozen constant in deep chain") {
@@ -318,10 +318,10 @@ rankdir=TB;
     v.with_id("v"); // 11
     g.back_propagate(v);
 
-    REQUIRE_THAT(a.m_grad, WithinAbs(5.0F, 1e-6));    // dv/da = frozen_b = 5
-    REQUIRE(frozen_b.m_grad == 0.0F);                 // blocked
-    REQUIRE_THAT(c.m_grad, WithinAbs(1.0F, 1e-6));    // dv/dc = 1
-    REQUIRE_THAT(prod.m_grad, WithinAbs(1.0F, 1e-6)); // dv/d(prod) = 1
+    REQUIRE_THAT(a.grad_, WithinAbs(5.0F, 1e-6));    // dv/da = frozen_b = 5
+    REQUIRE(frozen_b.grad_ == 0.0F);                 // blocked
+    REQUIRE_THAT(c.grad_, WithinAbs(1.0F, 1e-6));    // dv/dc = 1
+    REQUIRE_THAT(prod.grad_, WithinAbs(1.0F, 1e-6)); // dv/d(prod) = 1
   }
 
   SECTION("frozen intermediate node stops gradient to its children") {
@@ -342,15 +342,15 @@ rankdir=TB;
     g.back_propagate(v);
     print_dot(g, v, "graph_requires_grad.dot");
 
-    // d receives gradient: dv/dd = abc.m_value = 7
-    REQUIRE_THAT(d.m_grad, WithinAbs(7.0F, 1e-6));
+    // d receives gradient: dv/dd = abc.value_ = 7
+    REQUIRE_THAT(d.grad_, WithinAbs(7.0F, 1e-6));
 
     // abc and everything below it gets nothing
-    REQUIRE(abc.m_grad == 0.0F);
-    REQUIRE(ab.m_grad == 0.0F);
-    REQUIRE(a.m_grad == 0.0F);
-    REQUIRE(b.m_grad == 0.0F);
-    REQUIRE(c_var.m_grad == 0.0F);
+    REQUIRE(abc.grad_ == 0.0F);
+    REQUIRE(ab.grad_ == 0.0F);
+    REQUIRE(a.grad_ == 0.0F);
+    REQUIRE(b.grad_ == 0.0F);
+    REQUIRE(c_var.grad_ == 0.0F);
   }
 }
 
