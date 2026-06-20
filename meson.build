@@ -19,6 +19,7 @@ test(
     executable(
         'test1',
         'tests/test1.cpp',
+        'src/arena.cpp',
         include_directories: inc,
         dependencies: [fmt_dep, catch2_dep]
     )

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fmt/format.h>
+#include <myx_grad/arena.h>
 
 #include <cmath>
 #include <cstddef>
@@ -10,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace engine {
@@ -67,11 +69,10 @@ static auto format_v(T val) -> std::string {
 template <typename T>
 struct Node {
     static inline int count = 0;
-    explicit Node(T value, std::string id = "", std::string shape = "record")
-        : value_(std::move(value)), id_(id.empty() ? "node_" + std::to_string(count) : id), shape_(std::move(shape)) {
+    explicit Node(const std::string &id = "", std::string shape = "record")
+        : id_(id.empty() ? "node_" + std::to_string(count) : id), shape_(std::move((shape))) {
         ++count;
     }
-    T value_;
     std::string id_;
     std::string shape_;
 };
@@ -91,68 +92,78 @@ inline auto to_string(const engine::Value<T> &node) -> std::string {
 }
 
 template <typename T>
-struct graph {
-    std::vector<std::unique_ptr<Value<T>>> nodes_;  // arena ownership
+class Graph {
+public:
+    Graph() = default;
+    Graph(const Graph &) = delete;
+    auto operator=(const Graph &) -> Graph & = delete;
+    ~Graph() = default;
 
-    // ---- factory methods ----
+private:
+    util::Arena arena_;
+    std::vector<Value<T> *> nodes_;
 
+    template <typename... Args>
+    auto alloc_value(Args &&...args) -> Value<T> * {
+        void *value_ptr = arena_.alloc(sizeof(Value<T>));
+        auto *value = new (value_ptr) Value<T>(std::forward<Args>(args)...);
+        nodes_.push_back(value);
+        return value;
+    }
+
+public:
     auto leaf(T val, std::string id = "") -> Value<T> & {
-        auto node = std::make_unique<Value<T>>(val, id);
-        auto &ref = *node;
-        nodes_.push_back(std::move(node));
-        return ref;
+        auto *node = alloc_value(val, id, this);
+        return *node;
     }
 
     auto add(Value<T> &left, Value<T> &right) -> Value<T> & {
-        auto node = std::make_unique<Value<T>>("", left.value_ + right.value_, 0.0, op_t::add, &left, &right);
-        auto &ref = *node;
-        nodes_.push_back(std::move(node));
-        return ref;
+        assert(left.graph_ == this);
+        assert(right.graph_ == this);
+        auto *node = alloc_value("", left.value_ + right.value_, 0.0, op_t::add, &left, &right, this);
+        return *node;
     }
 
     auto sub(Value<T> &left, Value<T> &right) -> Value<T> & {
-        auto node = std::make_unique<Value<T>>("", left.value_ - right.value_, 0.0, op_t::sub, &left, &right);
-        auto &ref = *node;
-        nodes_.push_back(std::move(node));
-        return ref;
+        assert(left.graph_ == this);
+        assert(right.graph_ == this);
+        auto *node = alloc_value("", left.value_ - right.value_, 0.0, op_t::sub, &left, &right, this);
+        return *node;
     }
 
     auto mul(Value<T> &left, Value<T> &right) -> Value<T> & {
-        auto node = std::make_unique<Value<T>>("", left.value_ * right.value_, 0.0, op_t::mul, &left, &right);
-        auto &ref = *node;
-        nodes_.push_back(std::move(node));
-        return ref;
+        assert(left.graph_ == this);
+        assert(right.graph_ == this);
+        auto *node = alloc_value("", left.value_ * right.value_, 0.0, op_t::mul, &left, &right, this);
+        return *node;
     }
 
     auto div(Value<T> &left, Value<T> &right) -> Value<T> & {
-        auto node = std::make_unique<Value<T>>("", left.value_ / right.value_, 0.0, op_t::div, &left, &right);
-        auto &ref = *node;
-        nodes_.push_back(std::move(node));
-        return ref;
+        assert(left.graph_ == this);
+        assert(right.graph_ == this);
+        auto *node = alloc_value("", left.value_ / right.value_, 0.0, op_t::div, &left, &right, this);
+        return *node;
     }
 
     auto pow(Value<T> &base, T exponent) -> Value<T> & {
-        auto node = std::make_unique<Value<T>>("", std::pow(base.value_, exponent), 0.0, op_t::pow, &base, nullptr);
+        assert(base.graph_ == this);
+        auto *node = alloc_value("", std::pow(base.value_, exponent), 0.0, op_t::pow, &base, nullptr, this);
         node->op_params_[0] = exponent;
-        auto &ref = *node;
-        nodes_.push_back(std::move(node));
-        return ref;
+        return *node;
     }
 
     auto tanh(Value<T> &x) -> Value<T> & {
+        assert(x.graph_ == this);
         auto exp2x = std::exp(2 * x.value_);
         auto val = (exp2x - 1) / (exp2x + 1);
-        auto node = std::make_unique<Value<T>>("", val, 0.0, op_t::tanh, &x, nullptr);
-        auto &ref = *node;
-        nodes_.push_back(std::move(node));
-        return ref;
+        auto *node = alloc_value("", val, 0.0, op_t::tanh, &x, nullptr, this);
+        return *node;
     }
 
     auto exp(Value<T> &x) -> Value<T> & {
-        auto node = std::make_unique<Value<T>>("", std::exp(x.value_), 0.0, op_t::exp, &x, nullptr);
-        auto &ref = *node;
-        nodes_.push_back(std::move(node));
-        return ref;
+        assert(x.graph_ == this);
+        auto *node = alloc_value("", std::exp(x.value_), 0.0, op_t::exp, &x, nullptr, this);
+        return *node;
     }
 
     // ---- display ----
@@ -208,24 +219,53 @@ struct graph {
 };
 
 template <typename T>
+auto operator+(Value<T> &left, Value<T> &right) -> Value<T> & {
+    assert(left.graph_ == right.graph_);
+    return left.graph_->add(left, right);
+}
+
+template <typename T>
+auto operator-(Value<T> &left, Value<T> &right) -> Value<T> & {
+    assert(left.graph_ == right.graph_);
+    return left.graph_->sub(left, right);
+}
+
+template <typename T>
+auto operator*(Value<T> &left, Value<T> &right) -> Value<T> & {
+    assert(left.graph_ == right.graph_);
+    return left.graph_->mul(left, right);
+}
+
+template <typename T>
+auto operator/(Value<T> &left, Value<T> &right) -> Value<T> & {
+    assert(left.graph_ == right.graph_);
+    return left.graph_->div(left, right);
+}
+
+template <typename T>
 class Value : public Node<T> {
+    friend class Graph<T>;
+
+    Value(std::string id, T val, float_t grad, op_t op, Value<T> *left, Value<T> *right, Graph<T> *graph)
+        : Node<T>(id), value_(val), grad_(grad), op_(op), left_(left), right_(right), graph_(graph) {}
+
+    explicit Value(T val) : Value("", val, 0.0, op_t::nop, nullptr, nullptr, nullptr) {}
+
+    Value(T val, std::string id, Graph<T> *graph) : Value(id, val, 0.0, op_t::nop, nullptr, nullptr, graph) {}
+
+    Value(T val, std::string id) : Value(id, val, 0.0, op_t::nop, nullptr, nullptr, nullptr) {}
+
 public:
     static constexpr std::size_t k_max_op_params = 4;
-
-    Value(std::string id, T val, float_t grad, op_t op, Value<T> *left, Value<T> *right)
-        : Node<T>(val, id), value_(val), grad_(grad), op_(op), left_(left), right_(right) {}
-
-    explicit Value(T val) : Value("", val, 0.0, op_t::nop, nullptr, nullptr) {}
-
-    Value(T val, std::string id) : Value(id, val, 0.0, op_t::nop, nullptr, nullptr) {}
 
     // Non-copyable, non-movable: Value holds internal pointers (left_, right_)
     // that would dangle if the object were moved or copied. All Value objects
     // must be created through graph<T> factory methods, which own the arena.
     Value(const Value &) = delete;
-    Value &operator=(const Value &) = delete;
+    auto operator=(const Value &) -> Value & = delete;
     Value(Value &&) = delete;
-    Value &operator=(Value &&) = delete;
+    auto operator=(Value &&) -> Value & = delete;
+    ~Value() = default;
 
     auto value() const -> T {
         return value_;
@@ -322,7 +362,9 @@ public:
     bool requires_grad_ = true;
     T op_params_[k_max_op_params]{};  // per-op parameters (pow: exponent,
                                       // leaky_relu: slope, etc.)
+    Graph<T> *graph_ = nullptr;
 };
+
 
 }  // namespace engine
 
