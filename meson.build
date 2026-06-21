@@ -7,6 +7,8 @@ catch2_dep = dependency('catch2-with-main')
 executable(
     'myx_grad',
     'src/myx_grad.cpp',
+    'src/arena.cpp',
+    'src/engine.cpp',
     'src/main.cpp',
     include_directories: inc,
     dependencies: [fmt_dep],
@@ -18,8 +20,9 @@ test(
     'myx_grad_test',
     executable(
         'test1',
-        'tests/test1.cpp',
         'src/arena.cpp',
+        'src/engine.cpp',
+        'tests/test1.cpp',
         include_directories: inc,
         dependencies: [fmt_dep, catch2_dep]
     )

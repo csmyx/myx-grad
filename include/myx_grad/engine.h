@@ -14,9 +14,9 @@
 #include <utility>
 #include <vector>
 
-namespace engine {
+#include "fmt/base.h"
 
-using float_t = double;
+namespace engine {
 
 template <typename T>
 class Value;
@@ -61,9 +61,9 @@ inline auto to_string(op_t o) -> std::string {
 template <typename T>
 static auto format_v(T val) -> std::string {
     if constexpr (std::is_floating_point_v<T>) {
-        return fmt::format("s[{:.6f}]", val);
+        return fmt::format("{:.6f}", val);
     }
-    return fmt::format("s[{}]", val);
+    return fmt::format("{}", val);
 }
 
 template <typename T>
@@ -78,7 +78,7 @@ struct Node {
 };
 
 template <typename T>
-inline auto to_string(const engine::Value<T> &node) -> std::string {
+inline auto to_dot_format(const engine::Value<T> &node) -> std::string {
     std::string label = fmt::format("{{id: {} | value: {} | grad: {} | op: {}", node.id_, format_v(node.value_),
                                     format_v(node.grad_), to_string(node.op_));
     if (node.op_ == op_t::pow) {
@@ -94,6 +94,7 @@ inline auto to_string(const engine::Value<T> &node) -> std::string {
 template <typename T>
 class Graph {
 public:
+    using Tensor = std::vector<Value<T> *>;
     Graph() = default;
     ~Graph() = default;
     Graph(const Graph &) = delete;
@@ -105,47 +106,72 @@ private:
     util::Arena arena_;
     std::vector<Value<T> *> nodes_;
 
+public:
     template <typename... Args>
-    auto alloc_value(Args &&...args) -> Value<T> * {
+    auto create_value(Args &&...args) -> Value<T> * {
         void *value_ptr = arena_.alloc<Value<T>>();
-        auto *value = new (value_ptr) Value<T>(std::forward<Args>(args)...);
+        auto *value = new (value_ptr) Value<T>(this, std::forward<Args>(args)...);
         nodes_.push_back(value);
         return value;
     }
 
-public:
-    auto leaf(T val, std::string id = "") -> Value<T> & {
-        auto *node = alloc_value(val, id, this);
+    auto create_tensor(const std::vector<T> &vals) -> Tensor {
+        std::vector<Value<T> *> inputs;
+        auto alloc_size = sizeof(Value<T>) * vals.size();
+        auto *value_ptr = static_cast<Value<T> *>(arena_.alloc(alloc_size, alignof(Value<T>)));
+        for (const auto &val : vals) {
+            auto *value = new (value_ptr) Value<T>(this, val);
+            inputs.push_back(value);
+            ++value_ptr;
+        }
+        return inputs;
+    }
+
+    auto zero_grad() {
+        for (auto *node : nodes_) {
+            if (node->requires_grad_) {
+                node->grad_ = 0;
+            }
+        }
+    }
+
+    auto leaf(T val, std::string id = "", bool requires_grad = true) -> Value<T> & {
+        auto *node = create_value(val, id, requires_grad);
         return *node;
     }
 
     auto add(Value<T> &left, Value<T> &right) -> Value<T> & {
         assert(left.graph_ == this && right.graph_ == this);
-        auto *node = alloc_value("", left.value_ + right.value_, 0.0, op_t::add, &left, &right, this);
+        bool rg = left.requires_grad_ || right.requires_grad_;
+        auto *node = create_value("", left.value_ + right.value_, 0.0, op_t::add, &left, &right, rg);
         return *node;
     }
 
     auto sub(Value<T> &left, Value<T> &right) -> Value<T> & {
         assert(left.graph_ == this && right.graph_ == this);
-        auto *node = alloc_value("", left.value_ - right.value_, 0.0, op_t::sub, &left, &right, this);
+        bool rg = left.requires_grad_ || right.requires_grad_;
+        auto *node = create_value("", left.value_ - right.value_, 0.0, op_t::sub, &left, &right, rg);
         return *node;
     }
 
     auto mul(Value<T> &left, Value<T> &right) -> Value<T> & {
         assert(left.graph_ == this && right.graph_ == this);
-        auto *node = alloc_value("", left.value_ * right.value_, 0.0, op_t::mul, &left, &right, this);
+        bool rg = left.requires_grad_ || right.requires_grad_;
+        auto *node = create_value("", left.value_ * right.value_, 0.0, op_t::mul, &left, &right, rg);
         return *node;
     }
 
     auto div(Value<T> &left, Value<T> &right) -> Value<T> & {
         assert(left.graph_ == this && right.graph_ == this);
-        auto *node = alloc_value("", left.value_ / right.value_, 0.0, op_t::div, &left, &right, this);
+        bool rg = left.requires_grad_ || right.requires_grad_;
+        auto *node = create_value("", left.value_ / right.value_, 0.0, op_t::div, &left, &right, rg);
         return *node;
     }
 
     auto pow(Value<T> &base, T exponent) -> Value<T> & {
         assert(base.graph_ == this);
-        auto *node = alloc_value("", std::pow(base.value_, exponent), 0.0, op_t::pow, &base, nullptr, this);
+        auto *node =
+            create_value("", std::pow(base.value_, exponent), 0.0, op_t::pow, &base, nullptr, base.requires_grad_);
         node->op_params_[0] = exponent;
         return *node;
     }
@@ -154,13 +180,13 @@ public:
         assert(x.graph_ == this);
         auto exp2x = std::exp(2 * x.value_);
         auto val = (exp2x - 1) / (exp2x + 1);
-        auto *node = alloc_value("", val, 0.0, op_t::tanh, &x, nullptr, this);
+        auto *node = create_value("", val, 0.0, op_t::tanh, &x, nullptr, x.requires_grad_);
         return *node;
     }
 
     auto exp(Value<T> &x) -> Value<T> & {
         assert(x.graph_ == this);
-        auto *node = alloc_value("", std::exp(x.value_), 0.0, op_t::exp, &x, nullptr, this);
+        auto *node = create_value("", std::exp(x.value_), 0.0, op_t::exp, &x, nullptr, x.requires_grad_);
         return *node;
     }
 
@@ -180,7 +206,7 @@ public:
                 continue;
             }
             seen.insert(cur);
-            node_str += to_string(*cur) + "\n";
+            node_str += to_dot_format(*cur) + "\n";
             if (cur->left_) {
                 stk.push_back(cur->left_);
                 edge_str += cur->left_->id_ + " -> " + cur->id_ + ";\n";
@@ -214,6 +240,15 @@ public:
             (*it)->back_propagate();
         }
     }
+
+    auto learn(T learn_ratio) {
+        for (auto *node : nodes_) {
+            // Only update parameters: leaves (op_t::nop) that require grad
+            if (node->requires_grad_ && node->op_ == op_t::nop) {
+                node->value_ -= learn_ratio * node->grad_;
+            }
+        }
+    }
 };
 
 template <typename T>
@@ -223,22 +258,28 @@ private:
     static constexpr std::size_t k_max_op_params = 4;
 
     // Value can only be constructed from Graph.
-    Value(std::string id, T val, float_t grad, op_t op, Value<T> *left, Value<T> *right, Graph<T> *graph)
-        : Node<T>(id), value_(val), grad_(grad), op_(op), left_(left), right_(right), graph_(graph) {}
+    Value(Graph<T> *graph, std::string id, T val, T grad, op_t op, Value<T> *left, Value<T> *right,
+          bool requires_grad = false)
+        : Node<T>(id)
+        , value_(val)
+        , grad_(grad)
+        , op_(op)
+        , left_(left)
+        , right_(right)
+        , graph_(graph)
+        , requires_grad_{requires_grad} {}
 
-    explicit Value(T val) : Value("", val, 0.0, op_t::nop, nullptr, nullptr, nullptr) {}
+    Value(Graph<T> *graph, T val, std::string id = "", bool requires_grad = false)
+        : Value(graph, id, val, 0.0, op_t::nop, nullptr, nullptr, requires_grad) {}
 
-    Value(T val, std::string id, Graph<T> *graph) : Value(id, val, 0.0, op_t::nop, nullptr, nullptr, graph) {}
-
-    Value(T val, std::string id) : Value(id, val, 0.0, op_t::nop, nullptr, nullptr, nullptr) {}
 
 public:
     T value_{};
-    float_t grad_{};  // gradient
+    T grad_ = 0;  // gradient
     op_t op_ = op_t::nop;
     Value<T> *left_ = nullptr;
     Value<T> *right_ = nullptr;
-    bool requires_grad_ = true;
+    bool requires_grad_ = false;
     T op_params_[k_max_op_params]{};  // per-op parameters (pow: exponent,
                                       // leaky_relu: slope, etc.)
     Graph<T> *graph_ = nullptr;

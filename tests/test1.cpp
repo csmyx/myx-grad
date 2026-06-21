@@ -308,10 +308,6 @@ rankdir=TB;
     }
 }
 
-// NOLINTEND(*-magic-numbers, *-identifier-length, *-avoid-do-while)
-
-// NOLINTBEGIN(*-magic-numbers, *-identifier-length)
-
 TEST_CASE("arena allocation", "[arena]") {
     SECTION("alloc returns non-null for small size") {
         util::Arena arena;
@@ -407,4 +403,6 @@ TEST_CASE("arena allocation", "[arena]") {
     }
 }
 
-// NOLINTEND(*-magic-numbers, *-identifier-length)
+
+// NOLINTEND(*-magic-numbers, *-identifier-length, *-avoid-do-while)
+// NOLINTBEGIN(*-magic-numbers, *-identifier-length)
