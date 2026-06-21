@@ -47,17 +47,13 @@ auto main() -> int {
     fmt::println("target: {}", nn::to_string(target));
     size_t max_epoch = 2000;
     for (size_t epoch = 0; epoch < max_epoch; ++epoch) {
-        auto pred = nn::Tensor{};
-        for (size_t i = 0; i < batch_size; ++i) {
-            pred.push_back(mlp(X[i]));
-        }
+        auto pred = mlp.forward_batch(X);
         auto *root = loss(pred, target);
         graph.zero_grad();
         graph.back_propagate(*root);
-        graph.learn(0.003);
-        fmt::println("Epoch: {}, Loss: {}", epoch, root->value());
+        graph.learn(0.01);
         if (epoch % 100 == 0) {
-            fmt::println("epoch: {}, Loss: {}, pred: {}", epoch, root->value(), nn::to_string(pred));
+            fmt::println("epoch: {}, Loss: {:.6f}, pred: {}", epoch, root->value(), nn::to_string(pred));
         }
     }
 }
